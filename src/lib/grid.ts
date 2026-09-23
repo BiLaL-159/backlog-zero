@@ -9,6 +9,8 @@ export const PICKER = {
   gridSize: 12,
   // A video shown this recently sits out, while enough others remain to fill the grid.
   recentlyShownMs: 3 * 24 * 60 * 60 * 1000,
+  // How long the Snooze action hides a video.
+  snoozeMs: 7 * 24 * 60 * 60 * 1000,
 };
 
 export interface Card extends Video {
@@ -43,6 +45,18 @@ export function pickCards(videos: VideoMap, { now, n = PICKER.gridSize, random =
 
   const best = (list: typeof scored) => list.sort((a, b) => b.score - a.score).map((s) => s.card);
   return [...best(scored.filter((s) => !s.recent)), ...best(scored.filter((s) => s.recent))].slice(0, n);
+}
+
+// The cards to show after the pool changed (an action, a re-roll, a sync). Cards
+// still in `ranked` keep their slot, a slot whose card left takes the best card
+// not on screen, and leftover room fills from the end. With no previous slots
+// it's just the top n.
+export function fillSlots(prev: string[], ranked: Card[], n = PICKER.gridSize): Card[] {
+  const byId = new Map(ranked.map((c) => [c.id, c]));
+  const onScreen = new Set(prev.filter((id) => byId.has(id)));
+  const spare = ranked.filter((c) => !onScreen.has(c.id));
+  const slots = prev.map((id) => byId.get(id) ?? spare.shift()).filter((c) => c != null);
+  return [...slots, ...spare].slice(0, n);
 }
 
 function isSnoozed(video: Video, now: Date): boolean {

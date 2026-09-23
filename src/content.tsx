@@ -7,9 +7,9 @@
 //   - re-inject on yt-navigate-finish (YouTube's soft navigations), no polling
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
-import { pickCards, formatDuration, timeAgo, type Card } from "./lib/grid.ts";
-import type { Backlog, Message, Response } from "./lib/messages.ts";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { pickCards, fillSlots, formatDuration, timeAgo, PICKER, type Card } from "./lib/grid.ts";
+import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 
 // YouTube keeps every page it has visited in the DOM and just hides the inactive
@@ -137,19 +137,54 @@ function usePageView() {
 
 function Grid({ videos }: { videos: VideoMap }) {
   const view = usePageView();
-  const cards = useMemo(() => pickCards(videos, view), [videos, view]);
+  // Videos dealt with on this page (any action, re-roll included). They leave at
+  // once, without waiting for the write, and a sync landing mid-write can't bring
+  // them back.
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const ranked = useMemo(
+    () => pickCards(videos, { ...view, n: Infinity }).filter((c) => !gone.has(c.id)),
+    [videos, view, gone]
+  );
+  // The previous cards' order, so a backfill lands in the slot that emptied.
+  const slots = useRef<string[]>([]);
+  const cards = useMemo(() => {
+    const next = fillSlots(slots.current, ranked);
+    slots.current = next.map((c) => c.id);
+    return next;
+  }, [ranked]);
   // Only the cards actually rendered count as shown.
   useEffect(() => {
     if (cards.length) send({ type: "MARK_SHOWN", ids: cards.map((c) => c.id) }).catch(() => {}); // best effort
   }, [cards]);
 
-  if (!cards.length) return <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />;
+  async function act(card: Card, patch: VideoPatch | null) {
+    setError(null);
+    setGone((g) => new Set(g).add(card.id));
+    if (!patch) return; // re-roll: nothing to store
+    try {
+      const res = await send({ type: "UPDATE_VIDEO", id: card.id, patch });
+      if (!res?.ok) throw new Error(res?.error ?? "No response");
+    } catch (err) {
+      // Not saved: let the video back into the pool rather than lose it silently.
+      setGone((g) => new Set([...g].filter((id) => id !== card.id)));
+      setError(`Couldn't save "${card.title}": ${(err as Error).message}`);
+    }
+  }
+
   return (
-    <div class="grid">
-      {cards.map((c) => (
-        <VideoCard key={c.id} card={c} />
-      ))}
-    </div>
+    <>
+      {error && <p class="grid-error">{error}</p>}
+      {cards.length ? (
+        <div class="grid">
+          {cards.map((c) => (
+            <VideoCard key={c.id} card={c} onAction={(patch) => act(c, patch)} />
+          ))}
+        </div>
+      ) : (
+        <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />
+      )}
+    </>
   );
 }
 
@@ -191,15 +226,37 @@ function Toolbar({ backlog: { lastSyncedAt, signInNeeded } }: { backlog: Backlog
   );
 }
 
-function VideoCard({ card }: { card: Card }) {
+// The card actions and what each stores. Re-roll stores nothing: the video only
+// leaves this page view, its status untouched.
+const ACTIONS: { label: string; hint: string; patch: () => VideoPatch | null }[] = [
+  { label: "Watched", hint: "Mark as watched", patch: () => ({ status: "watched" }) },
+  {
+    label: "Snooze",
+    hint: `Hide for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
+    patch: () => ({ snoozedUntil: new Date(Date.now() + PICKER.snoozeMs).toISOString() }),
+  },
+  { label: "Keep", hint: "Worth rewatching: move out of the backlog", patch: () => ({ status: "kept" }) },
+  { label: "Re-roll", hint: "Show another video instead", patch: () => null },
+];
+
+function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatch | null) => void }) {
   return (
-    <a class="card" href={`/watch?v=${encodeURIComponent(card.id)}`}>
-      <div class="thumb">
-        <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
-        <span class="duration">{formatDuration(card.durationSec)}</span>
+    <div class="card">
+      <a href={`/watch?v=${encodeURIComponent(card.id)}`}>
+        <div class="thumb">
+          <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
+          <span class="duration">{formatDuration(card.durationSec)}</span>
+        </div>
+        <div class="title">{card.title}</div>
+      </a>
+      <div class="actions">
+        {ACTIONS.map((a) => (
+          <button key={a.label} title={a.hint} onClick={() => onAction(a.patch())}>
+            {a.label}
+          </button>
+        ))}
       </div>
-      <div class="title">{card.title}</div>
-    </a>
+    </div>
   );
 }
 
@@ -251,7 +308,7 @@ const CSS = `
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 40px 16px;
   }
-  .card { color: inherit; text-decoration: none; display: block; }
+  .card a { color: inherit; text-decoration: none; display: block; }
   .thumb {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -282,7 +339,10 @@ const CSS = `
     -webkit-line-clamp: 2;
     overflow: hidden;
   }
-  .card:hover .title { text-decoration: underline; }
+  .card a:hover .title { text-decoration: underline; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .actions button { height: 28px; padding: 0 10px; font-size: 12px; }
+  .grid-error { margin: 0 0 16px; font-size: 14px; color: #e00; }
   .notice { max-width: 480px; margin: 80px auto; text-align: center; }
   .notice h2 { font-size: 20px; font-weight: 500; margin: 0 0 8px; }
   .notice p {

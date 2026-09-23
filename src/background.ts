@@ -19,6 +19,10 @@ const handlers: Handlers = {
     await store.markShown(ids, new Date().toISOString());
     return {};
   },
+  UPDATE_VIDEO: async ({ id, patch }) => {
+    await store.patchVideo(id, patch);
+    return {};
+  },
 };
 
 chrome.runtime.onMessage.addListener(
