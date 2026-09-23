@@ -1,10 +1,11 @@
 // Popup: a dumb UI that asks the background worker to do the real work.
 // Shows the cached backlog on open; "Sync" re-fetches from YouTube.
-import { isInBacklog } from "./lib/sync.js";
+import { isInBacklog } from "./lib/sync.ts";
+import type { Backlog, Message, Response } from "./lib/messages.ts";
 
-const btn = document.getElementById("sync");
-const status = document.getElementById("status");
-const list = document.getElementById("list");
+const btn = document.getElementById("sync") as HTMLButtonElement;
+const status = document.getElementById("status") as HTMLDivElement;
+const list = document.getElementById("list") as HTMLUListElement;
 
 let syncing = false;
 
@@ -21,16 +22,16 @@ btn.addEventListener("click", () => {
 });
 
 // onReply runs before rendering; returning true skips the render.
-function send(msg, onReply) {
-  chrome.runtime.sendMessage(msg, (res) => {
+function send(msg: Message, onReply?: () => boolean | void) {
+  chrome.runtime.sendMessage(msg, (res?: Response) => {
     if (onReply?.()) return;
-    if (chrome.runtime.lastError) return showError(chrome.runtime.lastError.message);
+    if (chrome.runtime.lastError) return showError(chrome.runtime.lastError.message ?? "Unknown error");
     if (!res?.ok) return showError(res?.error || "Unknown error");
     render(res);
   });
 }
 
-function render({ videos = {}, playlists = [], lastSyncedAt }) {
+function render({ videos = {}, playlists = [], lastSyncedAt }: Backlog) {
   list.innerHTML = "";
   if (!lastSyncedAt) {
     status.textContent = "Not synced yet.";
@@ -50,15 +51,15 @@ function render({ videos = {}, playlists = [], lastSyncedAt }) {
   }
 }
 
-function timeAgo(iso) {
-  const min = Math.round((Date.now() - new Date(iso)) / 60000);
+function timeAgo(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const h = Math.round(min / 60);
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
-function showError(msg) {
+function showError(msg: string) {
   status.textContent = "Error";
   status.className = "error";
   list.innerHTML = "";
