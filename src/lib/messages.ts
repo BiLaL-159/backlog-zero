@@ -1,4 +1,5 @@
-// The popup ↔ background message protocol, shared so both sides agree on shapes.
+// The message protocol between the background worker and its callers (popup,
+// content script), shared so every side agrees on shapes.
 import type { VideoMap } from "./sync.ts";
 import type { Playlist } from "./youtube.ts";
 
