@@ -8,16 +8,18 @@ MV3 extension written in TypeScript. Signs in with Google (`youtube.readonly`), 
 video in your custom playlists (with durations), and merges them into a backlog in
 `chrome.storage.local` without losing what you've marked. On youtube.com's home page the
 recommendation feed is hidden and a grid of your backlog (Preact in a Shadow DOM) takes its
-place. The grid shows the top 12 eligible videos (nothing watched, kept, archived, snoozed
-or removed from YouTube), scored `0.4 × howOld + 0.4 × howShort + 0.2 × random`; videos
-shown in the last 3 days sit out while enough others remain (tunables: `PICKER` in
-`lib/grid.ts`). Each card has Watched, Snooze (7 days), Keep and Re-roll; the card leaves
+place. The grid shows eligible videos (nothing watched, kept, archived, snoozed or removed
+from YouTube) 12 at a time, loading another 12 as you scroll. Each playlist's videos are
+scored `0.4 × howOld + 0.4 × howShort + 0.2 × random`, and the All view deals from the
+playlists in turn so no single playlist crowds out the rest; videos shown in the last
+3 days sit out while enough others remain (tunables: `PICKER` in `lib/grid.ts`). Each
+card has Watched, Snooze (7 days), Keep and Re-roll as icons on hover; the card leaves
 at once and the next pick takes its slot, and the change is saved through the serialized
 store so a concurrent sync can't undo it. Tabs above the grid ([All] plus one per playlist)
 run the same picker over just that playlist's backlog, straight from the cache. Kept videos
-sit on their own "Worth a rewatch" shelf below the grid, shown on about a quarter of visits
-and rotating through the ones shown least recently (`PICKER.shelf`). A Refresh
-button above the grid syncs on demand and shows "synced X ago";
+sit on their own "Worth a rewatch" shelf after the grid's first 12, shown on about a quarter
+of visits and rotating through the ones shown least recently (`PICKER.shelf`). The
+popup's Sync button syncs on demand and shows "synced X ago";
 a `chrome.alarms` timer syncs every ~6h in the background without ever opening Google's
 consent screen (with no cached token it flags "sign-in needed" instead). Whenever any sync
 finishes, an open grid updates in place. Vite bundles `src/` into
