@@ -1,8 +1,39 @@
 // Pure sync logic: turns fresh YouTube data into the chrome.storage.local backlog
 // model. No chrome.* or network calls here, so it runs (and is tested) under Node.
 
+export type VideoStatus = "unseen" | "watched" | "kept" | "archived";
+
+// One stored backlog entry, keyed by videoId in the `videos` map.
+export interface Video {
+  title: string;
+  durationSec: number;
+  playlistIds: string[];
+  dateAdded: string; // ISO timestamp of the earliest save
+  status: VideoStatus;
+  snoozedUntil: string | null;
+  lastShownAt: string | null;
+  removedAt: string | null;
+  // Fields added by later features survive a re-sync untouched.
+  [extra: string]: unknown;
+}
+
+export type VideoMap = Record<string, Video>;
+
+// One (playlist, video) pair from playlistItems.list.
+export interface PlaylistItem {
+  videoId: string;
+  title: string;
+  addedAt: string;
+  playlistId: string;
+}
+
+// A PlaylistItem with its duration from videos.list (null when unavailable).
+export interface FetchedItem extends PlaylistItem {
+  durationSec: number | null;
+}
+
 // ISO 8601 duration ("PT1H2M3S", "P1DT1S", "P0D") → seconds.
-export function parseDuration(iso) {
+export function parseDuration(iso: string | null | undefined): number {
   const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso ?? "");
   if (!m) return 0;
   const [, d, h, min, s] = m.map((x) => Number(x ?? 0));
@@ -14,8 +45,8 @@ export function parseDuration(iso) {
 //   fetched – one entry per (playlist, video) pair from YouTube, with durationSec
 //             attached from videos.list (null when the video is unavailable)
 //   now     – ISO timestamp for this sync
-export function mergeBacklog(prev, fetched, now) {
-  const videos = {};
+export function mergeBacklog(prev: VideoMap, fetched: FetchedItem[], now: string): VideoMap {
+  const videos: VideoMap = {};
   for (const it of fetched) {
     // videos.list returns nothing for deleted/private videos, so they have no
     // duration. They can't be watched — leave them out.
@@ -34,7 +65,7 @@ export function mergeBacklog(prev, fetched, now) {
       status: "unseen",
       snoozedUntil: null,
       lastShownAt: null,
-      ...prev[it.videoId],
+      ...(prev[it.videoId] as Video | undefined),
       title: it.title,
       durationSec: it.durationSec,
       playlistIds: [it.playlistId],
@@ -52,6 +83,6 @@ export function mergeBacklog(prev, fetched, now) {
 }
 
 // Still saved on YouTube and not yet dealt with (watched/kept/archived).
-export function isInBacklog(video) {
+export function isInBacklog(video: Video): boolean {
   return !video.removedAt && video.status === "unseen";
 }

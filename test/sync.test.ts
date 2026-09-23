@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDuration, mergeBacklog, isInBacklog } from "../src/lib/sync.js";
+import { parseDuration, mergeBacklog, isInBacklog, type FetchedItem, type Video, type VideoMap } from "../src/lib/sync.ts";
 
 test("parseDuration converts ISO 8601 durations to seconds", () => {
   assert.equal(parseDuration("PT1H2M3S"), 3723);
@@ -12,7 +12,7 @@ test("parseDuration converts ISO 8601 durations to seconds", () => {
 
 const NOW = "2026-09-23T12:00:00.000Z";
 
-const item = (over = {}) => ({
+const item = (over: Partial<FetchedItem> = {}): FetchedItem => ({
   videoId: "v1",
   title: "How to make pasta",
   addedAt: "2025-01-10T08:00:00Z",
@@ -38,7 +38,7 @@ test("a newly saved video enters the backlog as unseen", () => {
 });
 
 test("re-sync keeps the user's status, snooze and last-shown, but refreshes the title", () => {
-  const prev = {
+  const prev: VideoMap = {
     v1: {
       title: "Old title",
       durationSec: 600,
@@ -71,7 +71,7 @@ test("a video saved in two playlists is one record listing both, dated by its ea
   assert.equal(videos.v1.dateAdded, "2024-06-01T00:00:00Z");
 });
 
-const stored = (over = {}) => ({
+const stored = (over: Partial<Video> = {}): Video => ({
   title: "How to make pasta",
   durationSec: 600,
   playlistIds: ["PLcooking"],

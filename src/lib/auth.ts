@@ -4,7 +4,7 @@
 // Ask Chrome for an access token for the signed-in Google account.
 // interactive:true shows the consent/account-picker UI the first time;
 // after that Chrome returns a cached token silently.
-export function getToken({ interactive = true } = {}) {
+export function getToken({ interactive = true }: { interactive?: boolean } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive }, (token) => {
       if (chrome.runtime.lastError || !token) {
@@ -18,7 +18,7 @@ export function getToken({ interactive = true } = {}) {
 
 // Drop a token Chrome has cached (e.g. after a 401) so the next getToken()
 // fetches a fresh one instead of handing back the dead one.
-export function removeCachedToken(token) {
+export function removeCachedToken(token: string): Promise<void> {
   return new Promise((resolve) => {
     chrome.identity.removeCachedAuthToken({ token }, () => resolve());
   });

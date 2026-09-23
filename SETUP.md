@@ -8,10 +8,11 @@ make the client, and you load the extension to get the ID), so do these steps **
 
 ## 1. Load the extension to get its ID
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode** (top-right).
-3. Click **Load unpacked** and select the `backlog-zero/` folder.
-4. It will load with an error about the OAuth client — that's expected. **Copy the
+1. Build it: `npm install && npm run build` (compiles `src/` into `dist/`).
+2. Open `chrome://extensions`.
+3. Turn on **Developer mode** (top-right).
+4. Click **Load unpacked** and select the `backlog-zero/` folder.
+5. It will load with an error about the OAuth client — that's expected. **Copy the
    extension's ID** (the long string of letters under its name). You'll need it next.
 
 > Keep loading it from the **same folder path** — the ID is derived from the path, so
@@ -43,6 +44,7 @@ make the client, and you load the extension to get the ID), so do these steps **
 1. Open `manifest.json`.
 2. Replace `PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com` with your Client ID.
 3. Back on `chrome://extensions`, click the **reload** icon on Backlog Zero.
+   (Do the same after every `npm run build` — Chrome doesn't pick up `dist/` changes on its own.)
 
 ## 6. Test it
 
