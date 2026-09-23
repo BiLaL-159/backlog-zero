@@ -3,7 +3,7 @@
 A Chrome extension that replaces YouTube's home feed with your own playlist backlog,
 weighted so you actually watch it and the pile shrinks to zero.
 
-## Status: steps 4, 5 and 7 — weighted picker, card actions, refresh + background sync
+## Status: steps 4–7 — weighted picker, card actions, filter tabs, refresh + background sync
 MV3 extension written in TypeScript. Signs in with Google (`youtube.readonly`), fetches every
 video in your custom playlists (with durations), and merges them into a backlog in
 `chrome.storage.local` without losing what you've marked. On youtube.com's home page the
@@ -13,8 +13,9 @@ or removed from YouTube), scored `0.4 × howOld + 0.4 × howShort + 0.2 × rando
 shown in the last 3 days sit out while enough others remain (tunables: `PICKER` in
 `lib/grid.ts`). Each card has Watched, Snooze (7 days), Keep and Re-roll; the card leaves
 at once and the next pick takes its slot, and the change is saved through the serialized
-store so a concurrent sync can't undo it. A Refresh button above the grid syncs on demand and
-shows "synced X ago";
+store so a concurrent sync can't undo it. Tabs above the grid ([All] plus one per playlist)
+run the same picker over just that playlist's backlog, straight from the cache. A Refresh
+button above the grid syncs on demand and shows "synced X ago";
 a `chrome.alarms` timer syncs every ~6h in the background without ever opening Google's
 consent screen (with no cached token it flags "sign-in needed" instead). Whenever any sync
 finishes, an open grid updates in place. Vite bundles `src/` into
@@ -57,5 +58,5 @@ test/                node:test specs for the pure logic — run `npm test` (Node
 3. Content-script injection on youtube.com (Preact in Shadow DOM)
 4. **Weighted picker + hard filters** ✓
 5. **Actions: watched / snooze / keep + live grid updates** ✓
-6. Filter tabs (All + per-playlist)
+6. **Filter tabs (All + per-playlist)** ✓
 7. **Manual refresh + `chrome.alarms` timer** ✓

@@ -22,15 +22,23 @@ export interface PickOptions {
   n?: number;
   // 0..1 variety for one video; injectable so tests are deterministic.
   random?: (id: string) => number;
+  // A playlist tab: pick from just this playlist's videos, ranked among
+  // themselves. Omitted for the All view, the only view a future "don't clump
+  // same-topic" penalty would apply to.
+  playlist?: string;
 }
 
 // The videos the grid shows, best first. Hard filters drop anything watched,
 // kept, archived, removed from YouTube or still snoozed; the rest are scored and
 // the top n shown. Recently shown videos only fill in when the others run out,
 // so a small backlog never leaves the grid empty.
-export function pickCards(videos: VideoMap, { now, n = PICKER.gridSize, random = () => Math.random() }: PickOptions): Card[] {
+export function pickCards(
+  videos: VideoMap,
+  { now, n = PICKER.gridSize, random = () => Math.random(), playlist }: PickOptions
+): Card[] {
   const eligible = Object.entries(videos)
     .filter(([, v]) => isInBacklog(v) && !isSnoozed(v, now))
+    .filter(([, v]) => playlist == null || v.playlistIds.includes(playlist))
     .map(([id, v]): Card => ({ ...v, id }));
 
   // Scored across every eligible video, so fresh and fallback cards share a scale.
