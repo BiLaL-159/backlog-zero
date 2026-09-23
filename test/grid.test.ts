@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCards, fillSlots, formatDuration, timeAgo, PICKER, type Card } from "../src/lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, timeAgo, PICKER, type Card } from "../src/lib/grid.ts";
 import type { Video, VideoMap } from "../src/lib/sync.ts";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
@@ -140,6 +140,80 @@ test("a video saved in several playlists is eligible under each tab", () => {
 
 test("an empty playlist tab picks nothing", () => {
   assert.deepEqual(pickCards({ a: video() }, { now: NOW, playlist: "PLempty" }), []);
+});
+
+// A roll under the chance shows the shelf; one at or over it hides it.
+const SHOW = 0;
+const shelf = (videos: VideoMap, roll = SHOW, n?: number, random: (id: string) => number = () => 0) =>
+  pickShelf(videos, { now: NOW, roll, n, random }).map((c) => c.id);
+
+test("the shelf holds only kept videos", () => {
+  const videos: VideoMap = {
+    unseen: video(),
+    watched: video({ status: "watched" }),
+    kept: video({ status: "kept" }),
+    archived: video({ status: "archived" }),
+  };
+  assert.deepEqual(shelf(videos), ["kept"]);
+});
+
+test("kept videos never appear in the backlog grid", () => {
+  const videos: VideoMap = { a: video(), kept: video({ status: "kept" }) };
+  assert.deepEqual(pick(videos), ["a"]);
+  assert.deepEqual(pickCards(videos, { now: NOW, playlist: "PLcooking" }).map((c) => c.id), ["a"]);
+});
+
+test("the shelf shows only when the page view's roll is under the tunable chance", () => {
+  const videos: VideoMap = { kept: video({ status: "kept" }) };
+  const { chance } = PICKER.shelf;
+  assert.deepEqual(shelf(videos, chance - 0.01), ["kept"]);
+  assert.deepEqual(shelf(videos, chance), []);
+  assert.deepEqual(shelf(videos, 0.99), []);
+});
+
+test("the shelf chance is a share of page views, strictly between never and always", () => {
+  const { chance } = PICKER.shelf;
+  assert.ok(chance > 0 && chance < 1);
+});
+
+test("with no kept videos there is no shelf", () => {
+  assert.deepEqual(shelf({ a: video(), w: video({ status: "watched" }) }), []);
+  assert.deepEqual(shelf({}), []);
+});
+
+test("a kept video removed from YouTube leaves the shelf", () => {
+  const videos: VideoMap = { kept: video({ status: "kept" }), gone: video({ status: "kept", removedAt: daysAgo(1), playlistIds: [] }) };
+  assert.deepEqual(shelf(videos), ["kept"]);
+});
+
+test("the shelf rotates: never-shown first, then the longest since shown", () => {
+  const videos: VideoMap = {
+    yesterday: video({ status: "kept", lastShownAt: daysAgo(1) }),
+    lastMonth: video({ status: "kept", lastShownAt: daysAgo(30) }),
+    never: video({ status: "kept" }),
+    lastWeek: video({ status: "kept", lastShownAt: daysAgo(7) }),
+  };
+  assert.deepEqual(shelf(videos, SHOW, 3), ["never", "lastMonth", "lastWeek"]);
+});
+
+test("never-shown kept videos are ordered by the random draw", () => {
+  const videos: VideoMap = { a: video({ status: "kept" }), b: video({ status: "kept" }) };
+  assert.deepEqual(shelf(videos, SHOW, 2, (id) => (id === "b" ? 1 : 0)), ["b", "a"]);
+});
+
+test("the shelf is capped at its size", () => {
+  const videos: VideoMap = {};
+  for (let i = 0; i < 10; i++) videos[`k${i}`] = video({ status: "kept" });
+  assert.equal(shelf(videos).length, PICKER.shelf.size);
+});
+
+test("stamps from this page view keep the shelf's cards on a live re-pick", () => {
+  const later = new Date(NOW.getTime() + 60_000).toISOString();
+  const videos: VideoMap = {
+    onShelf: video({ status: "kept", lastShownAt: later }),
+    lastMonth: video({ status: "kept", lastShownAt: daysAgo(30) }),
+  };
+  assert.deepEqual(shelf(videos, SHOW, 1), ["onShelf"]);
 });
 
 const cards = (...ids: string[]): Card[] => ids.map((id) => ({ ...video(), id }));
