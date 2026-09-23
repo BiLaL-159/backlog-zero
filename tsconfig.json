@@ -3,7 +3,7 @@
   "compilerOptions": {
     "target": "es2022",
     "module": "nodenext",
-    "lib": ["es2022", "dom", "dom.iterable"],
+    "lib": ["es2023", "dom", "dom.iterable"],
     "types": ["chrome", "node"],
     "strict": true,
     // Sources import "./x.ts" so Node can run them directly (tests); Vite

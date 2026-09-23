@@ -67,7 +67,7 @@ export async function listMyPlaylists(token: string): Promise<Playlist[]> {
 
 // Every video in a playlist. Handles pagination.
 // snippet.publishedAt here = when the item was ADDED to the playlist (our dateAdded).
-// Video duration is NOT available here — see getVideoDurations.
+// Duration, channel and views are NOT available here — see getVideoDetails.
 export async function listPlaylistItems(token: string, playlistId: string): Promise<PlaylistItem[]> {
   const items: PlaylistItem[] = [];
   let pageToken: string | undefined;
@@ -100,20 +100,68 @@ export async function listPlaylistItems(token: string, playlistId: string): Prom
   return items;
 }
 
-// videoId → ISO 8601 duration, looked up 50 ids per call (1 quota unit each).
-// Deleted/private videos are simply absent from the result.
-export async function getVideoDurations(token: string, videoIds: string[]): Promise<Map<string, string>> {
-  const durations = new Map<string, string>();
+// The per-video details the grid shows. The playlist item alone doesn't have them.
+export interface VideoDetails {
+  duration: string; // ISO 8601
+  channelId: string;
+  channelTitle: string;
+  publishedAt: string; // when the video went up on YouTube
+  viewCount: number | null; // null when the uploader hides it
+}
+
+// videoId → VideoDetails, looked up 50 ids per call (1 quota unit each, whatever
+// the parts). Deleted/private videos are simply absent from the result.
+export async function getVideoDetails(token: string, videoIds: string[]): Promise<Map<string, VideoDetails>> {
+  const details = new Map<string, VideoDetails>();
   for (let i = 0; i < videoIds.length; i += 50) {
-    const data = await apiGet<ListResponse<{ id: string; contentDetails: { duration: string } }>>(
+    const data = await apiGet<
+      ListResponse<{
+        id: string;
+        snippet: { channelId: string; channelTitle: string; publishedAt: string };
+        contentDetails: { duration: string };
+        statistics?: { viewCount?: string };
+      }>
+    >(
       "/videos",
       {
-        part: "contentDetails",
+        part: "snippet,contentDetails,statistics",
         id: videoIds.slice(i, i + 50).join(","), // maxResults isn't allowed with id
       },
       token
     );
-    for (const v of data.items) durations.set(v.id, v.contentDetails.duration);
+    for (const v of data.items) {
+      const views = v.statistics?.viewCount;
+      details.set(v.id, {
+        duration: v.contentDetails.duration,
+        channelId: v.snippet.channelId,
+        channelTitle: v.snippet.channelTitle,
+        publishedAt: v.snippet.publishedAt,
+        viewCount: views == null ? null : Number(views),
+      });
+    }
   }
-  return durations;
+  return details;
+}
+
+// channelId → avatar image URL (88×88), looked up 50 ids per call (1 quota unit
+// each). Closed channels are simply absent from the result.
+export async function getChannelAvatars(token: string, channelIds: string[]): Promise<Map<string, string>> {
+  const avatars = new Map<string, string>();
+  for (let i = 0; i < channelIds.length; i += 50) {
+    const data = await apiGet<
+      ListResponse<{ id: string; snippet: { thumbnails: { default?: { url: string } } } }>
+    >(
+      "/channels",
+      {
+        part: "snippet",
+        id: channelIds.slice(i, i + 50).join(","), // maxResults isn't allowed with id
+      },
+      token
+    );
+    for (const c of data.items) {
+      const url = c.snippet.thumbnails.default?.url;
+      if (url) avatars.set(c.id, url);
+    }
+  }
+  return avatars;
 }

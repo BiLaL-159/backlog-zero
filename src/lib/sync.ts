@@ -7,6 +7,12 @@ export type VideoStatus = "unseen" | "watched" | "kept" | "archived";
 export interface Video {
   title: string;
   durationSec: number;
+  // Shown under the title, like YouTube's own cards. Absent on videos stored
+  // before these were synced, until the next sync.
+  channelTitle?: string;
+  channelAvatar?: string; // image URL; "" when the channel has none
+  publishedAt?: string; // when the video went up on YouTube
+  viewCount?: number | null; // null when the uploader hides it
   playlistIds: string[];
   dateAdded: string; // ISO timestamp of the earliest save
   status: VideoStatus;
@@ -27,9 +33,14 @@ export interface PlaylistItem {
   playlistId: string;
 }
 
-// A PlaylistItem with its duration from videos.list (null when unavailable).
+// A PlaylistItem with its details from videos.list (durationSec null when the
+// video is unavailable).
 export interface FetchedItem extends PlaylistItem {
   durationSec: number | null;
+  channelTitle: string;
+  channelAvatar: string;
+  publishedAt: string;
+  viewCount: number | null;
 }
 
 // ISO 8601 duration ("PT1H2M3S", "P1DT1S", "P0D") → seconds.
@@ -68,6 +79,10 @@ export function mergeBacklog(prev: VideoMap, fetched: FetchedItem[], now: string
       ...(prev[it.videoId] as Video | undefined),
       title: it.title,
       durationSec: it.durationSec,
+      channelTitle: it.channelTitle,
+      channelAvatar: it.channelAvatar,
+      publishedAt: it.publishedAt,
+      viewCount: it.viewCount,
       playlistIds: [it.playlistId],
       dateAdded: it.addedAt,
       removedAt: null,

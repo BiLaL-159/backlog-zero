@@ -8,7 +8,7 @@
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
-import { pickCards, fillSlots, pickShelf, formatDuration, PICKER, type Card } from "./lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, formatViews, publishedAgo, PICKER, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 import type { Playlist } from "./lib/youtube.ts";
@@ -346,15 +346,28 @@ function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatc
   );
 }
 
-// Thumbnail, duration and title, linking to the video.
+// Thumbnail, duration, then channel avatar beside the title and channel · views ·
+// date, like YouTube's own cards, linking to the video.
 function CardLink({ card }: { card: Card }) {
+  const stats = [
+    card.viewCount != null && formatViews(card.viewCount),
+    card.publishedAt && publishedAgo(card.publishedAt),
+  ].filter(Boolean);
   return (
     <a href={`/watch?v=${encodeURIComponent(card.id)}`}>
       <div class="thumb">
         <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
         <span class="duration">{formatDuration(card.durationSec)}</span>
       </div>
-      <div class="title">{card.title}</div>
+      <div class="details">
+        {/* An empty circle until a sync fetches the avatar, so every card lines up. */}
+        <div class="avatar">{card.channelAvatar && <img src={card.channelAvatar} alt="" loading="lazy" />}</div>
+        <div class="text">
+          <div class="title">{card.title}</div>
+          {card.channelTitle && <div class="meta">{card.channelTitle}</div>}
+          {stats.length > 0 && <div class="meta">{stats.join(" • ")}</div>}
+        </div>
+      </div>
     </a>
   );
 }
@@ -446,8 +459,18 @@ const CSS = `
     font-weight: 500;
     line-height: 18px;
   }
+  .details { display: flex; gap: 12px; margin-top: 12px; }
+  .avatar {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--chip);
+  }
+  .avatar img { width: 100%; height: 100%; display: block; }
+  .text { min-width: 0; }
   .title {
-    margin-top: 12px;
     font-size: 16px;
     font-weight: 500;
     line-height: 22px;
@@ -457,6 +480,15 @@ const CSS = `
     overflow: hidden;
   }
   .card a:hover .title { text-decoration: underline; }
+  .title + .meta { margin-top: 4px; }
+  .meta {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* Card actions: icon buttons over the thumbnail's top-right corner, shown on
      hover or keyboard focus (always on touch screens, which can't hover). */
   .card { position: relative; }

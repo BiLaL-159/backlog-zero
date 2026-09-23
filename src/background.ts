@@ -2,7 +2,7 @@
 // to the YouTube API. The popup and the content script send it messages;
 // it does the privileged work and sends data back.
 import { getToken, removeCachedToken } from "./lib/auth.ts";
-import { listMyPlaylists, listPlaylistItems, getVideoDurations, ApiError } from "./lib/youtube.ts";
+import { listMyPlaylists, listPlaylistItems, getVideoDetails, getChannelAvatars, ApiError } from "./lib/youtube.ts";
 import { parseDuration, type FetchedItem } from "./lib/sync.ts";
 import { createStore } from "./lib/store.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
@@ -96,11 +96,19 @@ async function fetchAndStore(token: string): Promise<Required<Backlog>> {
   const items = [];
   for (const p of playlists) items.push(...(await listPlaylistItems(token, p.id)));
 
-  const durations = await getVideoDurations(token, [...new Set(items.map((it) => it.videoId))]);
-  const fetched: FetchedItem[] = items.map((it) => ({
-    ...it,
-    durationSec: durations.has(it.videoId) ? parseDuration(durations.get(it.videoId)) : null,
-  }));
+  const details = await getVideoDetails(token, [...new Set(items.map((it) => it.videoId))]);
+  const avatars = await getChannelAvatars(token, [...new Set([...details.values()].map((d) => d.channelId))]);
+  const fetched: FetchedItem[] = items.map((it) => {
+    const d = details.get(it.videoId);
+    return {
+      ...it,
+      durationSec: d ? parseDuration(d.duration) : null,
+      channelTitle: d?.channelTitle ?? "",
+      channelAvatar: (d && avatars.get(d.channelId)) ?? "",
+      publishedAt: d?.publishedAt ?? "",
+      viewCount: d?.viewCount ?? null,
+    };
+  });
 
   // The slow fetch is done; the merge runs in the store's queue against whatever
   // is stored by then, so user changes made during the fetch survive.

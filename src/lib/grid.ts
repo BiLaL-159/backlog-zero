@@ -167,6 +167,33 @@ export function timeAgo(iso: string, now = Date.now()): string {
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
+// View count → YouTube's wording: "1 view", "842 views", "1.2K views", "3.4M views".
+// Truncated, not rounded, like YouTube (1,999 → "1.9K").
+const compact = new Intl.NumberFormat("en", { notation: "compact", roundingMode: "trunc" });
+export function formatViews(count: number): string {
+  return count === 1 ? "1 view" : `${compact.format(count)} views`;
+}
+
+// Publish date → YouTube's wording: "3 hours ago", "1 day ago", "2 years ago".
+// Each unit counts whole units elapsed, so 23 hours stays "23 hours ago".
+const UNITS: [string, number][] = [
+  ["year", 365 * 86_400_000],
+  ["month", 30 * 86_400_000],
+  ["week", 7 * 86_400_000],
+  ["day", 86_400_000],
+  ["hour", 3_600_000],
+  ["minute", 60_000],
+  ["second", 1000],
+];
+export function publishedAgo(iso: string, now = Date.now()): string {
+  const ms = Math.max(0, now - Date.parse(iso));
+  for (const [unit, size] of UNITS) {
+    const n = Math.floor(ms / size);
+    if (n >= 1) return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  }
+  return "just now";
+}
+
 // Seconds → YouTube-style timestamp: "0:45", "12:05", "1:02:03".
 export function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);

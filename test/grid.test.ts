@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCards, fillSlots, pickShelf, formatDuration, timeAgo, PICKER, type Card } from "../src/lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, formatViews, publishedAgo, timeAgo, PICKER, type Card } from "../src/lib/grid.ts";
 import type { Video, VideoMap } from "../src/lib/sync.ts";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
@@ -254,6 +254,27 @@ test("timeAgo rounds to minutes, hours, then days", () => {
   assert.equal(timeAgo(new Date(now - 5 * 60_000).toISOString(), now), "5 min ago");
   assert.equal(timeAgo(new Date(now - 2 * 3600_000).toISOString(), now), "2h ago");
   assert.equal(timeAgo(daysAgo(3), now), "3d ago");
+});
+
+test("formatViews matches YouTube's view counts", () => {
+  assert.equal(formatViews(0), "0 views");
+  assert.equal(formatViews(1), "1 view");
+  assert.equal(formatViews(842), "842 views");
+  assert.equal(formatViews(1999), "1.9K views");
+  assert.equal(formatViews(12_345), "12K views");
+  assert.equal(formatViews(3_456_789), "3.4M views");
+  assert.equal(formatViews(1_200_000_000), "1.2B views");
+});
+
+test("publishedAgo counts whole units, like YouTube", () => {
+  const now = NOW.getTime();
+  assert.equal(publishedAgo(NOW.toISOString(), now), "just now");
+  assert.equal(publishedAgo(new Date(now - 90 * 60_000).toISOString(), now), "1 hour ago");
+  assert.equal(publishedAgo(new Date(now - 23 * 3600_000).toISOString(), now), "23 hours ago");
+  assert.equal(publishedAgo(daysAgo(1), now), "1 day ago");
+  assert.equal(publishedAgo(daysAgo(13), now), "1 week ago");
+  assert.equal(publishedAgo(daysAgo(65), now), "2 months ago");
+  assert.equal(publishedAgo(daysAgo(800), now), "2 years ago");
 });
 
 test("the All view deals from each playlist in turn, so one playlist can't crowd out the rest", () => {
