@@ -46,10 +46,11 @@ make the client, and you load the extension to get the ID), so do these steps **
 
 ## 6. Test it
 
-1. Click the Backlog Zero toolbar icon → **Sign in & fetch playlists**.
+1. Click the Backlog Zero toolbar icon → **Sync from YouTube**.
 2. Approve the Google consent screen (you may see an "unverified app" notice — expected;
    continue as the test user you added).
-3. You should see your custom playlists listed, with counts. 🎉
+3. You should see how many videos are left to watch, then each custom playlist with
+   its count. 🎉
    (Also check the service worker console: `chrome://extensions` → Backlog Zero →
    **service worker** link → Console.)
 

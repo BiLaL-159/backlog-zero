@@ -1,0 +1,8 @@
+{
+  "name": "backlog-zero",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

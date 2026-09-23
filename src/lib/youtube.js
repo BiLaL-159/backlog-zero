@@ -10,7 +10,9 @@ async function apiGet(path, params, token) {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`YouTube API ${res.status}: ${body}`);
+    const err = new Error(`YouTube API ${res.status}: ${body}`);
+    err.status = res.status; // lets callers spot a 401 and refresh the token
+    throw err;
   }
   return res.json();
 }
@@ -45,8 +47,7 @@ export async function listMyPlaylists(token) {
 
 // Every video in a playlist. Handles pagination.
 // snippet.publishedAt here = when the item was ADDED to the playlist (our dateAdded).
-// Video duration is NOT available here — it needs a separate videos.list call
-// (part=contentDetails), added in step 2.
+// Video duration is NOT available here — see getVideoDurations.
 export async function listPlaylistItems(token, playlistId) {
   const items = [];
   let pageToken;
@@ -72,4 +73,22 @@ export async function listPlaylistItems(token, playlistId) {
     pageToken = data.nextPageToken;
   } while (pageToken);
   return items;
+}
+
+// videoId → ISO 8601 duration, looked up 50 ids per call (1 quota unit each).
+// Deleted/private videos are simply absent from the result.
+export async function getVideoDurations(token, videoIds) {
+  const durations = new Map();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const data = await apiGet(
+      "/videos",
+      {
+        part: "contentDetails",
+        id: videoIds.slice(i, i + 50).join(","), // maxResults isn't allowed with id
+      },
+      token
+    );
+    for (const v of data.items) durations.set(v.id, v.contentDetails.duration);
+  }
+  return durations;
 }
