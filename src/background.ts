@@ -7,12 +7,8 @@ import { parseDuration, type FetchedItem } from "./lib/sync.ts";
 import { createStore } from "./lib/store.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
 
-// chrome.storage.local layout (see Backlog in lib/messages.ts):
-//   videos       videoId → { title, durationSec, playlistIds, dateAdded, status,
-//                            snoozedUntil, lastShownAt, removedAt }
-//   playlists    [{ id, title, count }]
-//   lastSyncedAt ISO timestamp of the last successful sync
-// Every read and write goes through this one store, which serializes them.
+// Every read and write of the stored backlog goes through this one store, which
+// serializes them (layout: Backlog in lib/messages.ts).
 const store = createStore(chrome.storage.local);
 
 const handlers: Record<Message["type"], () => Promise<Backlog>> = {

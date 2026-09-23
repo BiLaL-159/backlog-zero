@@ -28,7 +28,7 @@ vite.config.ts       build: pages + worker pass, then a classic-script pass for 
 src/
   background.ts      service worker: holds the token, calls the API, answers messages
   popup.html/ts      dumb UI: shows the cached backlog, "Sync" re-fetches
-  content.ts         content script on youtube.com (stub until the grid lands)
+  content.tsx        content script on youtube.com (stub until the grid lands)
   lib/
     auth.ts          chrome.identity token helpers
     youtube.ts       read-only YouTube Data API v3 wrappers (playlists, items, durations)

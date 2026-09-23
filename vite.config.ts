@@ -15,7 +15,7 @@ const pages: Pass = {
 };
 
 const content: Pass = {
-  input: { content: src("content.ts") },
+  input: { content: src("content.tsx") },
   output: { format: "iife", entryFileNames: "[name].js" },
 };
 
