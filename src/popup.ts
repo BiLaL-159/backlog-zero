@@ -5,7 +5,8 @@ import { timeAgo } from "./lib/grid.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
 
 const btn = document.getElementById("sync") as HTMLButtonElement;
-const status = document.getElementById("status") as HTMLDivElement;
+const count = document.getElementById("count") as HTMLSpanElement;
+const status = document.getElementById("status") as HTMLSpanElement;
 const list = document.getElementById("list") as HTMLUListElement;
 
 let syncing = false;
@@ -15,7 +16,7 @@ send({ type: "GET_BACKLOG" }, () => syncing);
 
 btn.addEventListener("click", () => {
   status.textContent = "Syncing…";
-  status.className = "muted";
+  status.className = "";
   btn.disabled = syncing = true;
   send({ type: "SYNC" }, () => {
     btn.disabled = syncing = false;
@@ -34,6 +35,8 @@ function send(msg: Message, onReply?: () => boolean | void) {
 
 function render({ videos = {}, playlists = [], lastSyncedAt, signInNeeded }: Backlog) {
   list.innerHTML = "";
+  count.textContent = "";
+  status.className = "";
   if (signInNeeded) {
     status.textContent = "Sign-in needed — click Sync to sign in again.";
     status.className = "error";
@@ -41,28 +44,28 @@ function render({ videos = {}, playlists = [], lastSyncedAt, signInNeeded }: Bac
   }
   if (!lastSyncedAt) {
     status.textContent = "Not synced yet.";
-    status.className = "muted";
     return;
   }
   const backlog = Object.values(videos).filter(isInBacklog);
+  count.textContent = `${backlog.length} to watch`;
   status.textContent =
-    `${backlog.length} videos to watch across ${playlists.length} playlists · ` +
-    `synced ${timeAgo(lastSyncedAt)}`;
-  status.className = "muted";
+    `across ${playlists.length} playlist${playlists.length === 1 ? "" : "s"} · synced ${timeAgo(lastSyncedAt)}`;
   for (const p of playlists) {
-    const n = backlog.filter((v) => v.playlistIds.includes(p.id)).length;
     const li = document.createElement("li");
-    li.textContent = `${p.title} (${n})`;
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = p.title;
+    const n = document.createElement("span");
+    n.className = "n";
+    n.textContent = String(backlog.filter((v) => v.playlistIds.includes(p.id)).length);
+    li.append(name, n);
     list.appendChild(li);
   }
 }
 
 function showError(msg: string) {
-  status.textContent = "Error";
-  status.className = "error";
   list.innerHTML = "";
-  const li = document.createElement("li");
-  li.className = "error";
-  li.textContent = msg;
-  list.appendChild(li);
+  count.textContent = "";
+  status.textContent = msg;
+  status.className = "error";
 }
