@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Backlog Zero",
+  "version": "0.1.0",
+  "description": "Replace YouTube's home feed with your own playlist backlog, so you actually watch it.",
+  "permissions": ["identity", "storage"],
+  "host_permissions": ["https://www.googleapis.com/"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Backlog Zero",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "oauth2": {
+    "client_id": "PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
+  }
+}
