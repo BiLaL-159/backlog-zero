@@ -55,20 +55,7 @@
       }
       button:hover { opacity: 0.85; }
       button:disabled { opacity: 0.5; cursor: default; }
-      ul { list-style: none; margin: 16px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); }
-      ul:empty { display: none; }
-      li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; }
-      li .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      li .n {
-        flex: none;
-        min-width: 28px;
-        padding: 0 8px;
-        border-radius: 10px;
-        text-align: center;
-        font-size: 12px;
-        font-weight: 500;
-        background: var(--chip);
-      }
+      button.secondary { margin-top: 8px; color: var(--text); background: var(--chip); }
     </style>
   </head>
   <body>
@@ -81,7 +68,7 @@
       <span id="status"></span>
     </div>
     <button id="sync">Sync from YouTube</button>
-    <ul id="list"></ul>
+    <button id="pause" class="secondary"></button>
     <script type="module" src="./popup.ts"></script>
   </body>
 </html>

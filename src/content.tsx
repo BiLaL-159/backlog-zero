@@ -9,7 +9,7 @@
 import { render, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
 import { pickCards, fillSlots, pickShelf, formatDuration, formatViews, publishedAgo, PICKER, type Card } from "./lib/grid.ts";
-import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
+import type { Backlog, Message, Response, Settings, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 import type { Playlist } from "./lib/youtube.ts";
 
@@ -20,13 +20,23 @@ const FEED = 'ytd-browse[page-subtype="home"] ytd-two-column-browse-results-rend
 let host: HTMLElement | null = null;
 let hideFeed: HTMLStyleElement | null = null;
 let waitForFeed: MutationObserver | null = null;
+let paused = true; // until the setting is read, so the grid never flashes in
 
 document.addEventListener("yt-navigate-finish", update);
-update(); // the first yt-navigate-finish may have fired before we loaded
+// The first yt-navigate-finish may have fired before we loaded, hence the update().
+chrome.storage.local.get<Settings>("paused").then((s) => setPaused(s.paused));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && "paused" in changes) setPaused(changes.paused.newValue as Settings["paused"]);
+});
+
+function setPaused(value: boolean | undefined) {
+  paused = !!value;
+  update();
+}
 
 function update() {
   unmount();
-  if (location.pathname === "/") mount();
+  if (!paused && location.pathname === "/") mount();
 }
 
 function mount() {
