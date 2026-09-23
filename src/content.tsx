@@ -8,7 +8,7 @@
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
-import { pickCards, fillSlots, pickShelf, formatDuration, PICKER, type Card } from "./lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, formatViews, publishedAgo, PICKER, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 import type { Playlist } from "./lib/youtube.ts";
@@ -313,19 +313,19 @@ const ACTIONS: { label: string; hint: string; icon: string; patch: () => VideoPa
   { label: "Watched", hint: "Mark as watched", icon: "M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z", patch: () => ({ status: "watched" }) },
   {
     label: "Snooze",
-    hint: `Snooze: hide for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
+    hint: `Snooze for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
     icon: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z",
     patch: () => ({ snoozedUntil: new Date(Date.now() + PICKER.snoozeMs).toISOString() }),
   },
   {
     label: "Keep",
-    hint: "Keep: worth rewatching, move to the Kept shelf",
+    hint: "Keep for a rewatch",
     icon: "M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.2L7 18V5h10v13z",
     patch: () => ({ status: "kept" }),
   },
   {
     label: "Re-roll",
-    hint: "Re-roll: show another video instead",
+    hint: "Re-roll: show another video",
     icon: "M17.6 6.4A8 8 0 1 0 19.7 14h-2.1a6 6 0 1 1-1.4-6.2L13 11h7V4l-2.4 2.4z",
     patch: () => null,
   },
@@ -337,7 +337,7 @@ function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatc
       <CardLink card={card} />
       <div class="actions">
         {ACTIONS.map((a) => (
-          <button key={a.label} title={a.hint} aria-label={a.label} onClick={() => onAction(a.patch())}>
+          <button key={a.label} data-tip={a.hint} aria-label={a.hint} onClick={() => onAction(a.patch())}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d={a.icon} /></svg>
           </button>
         ))}
@@ -346,15 +346,28 @@ function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatc
   );
 }
 
-// Thumbnail, duration and title, linking to the video.
+// Thumbnail, duration, then channel avatar beside the title and channel · views ·
+// date, like YouTube's own cards, linking to the video.
 function CardLink({ card }: { card: Card }) {
+  const stats = [
+    card.viewCount != null && formatViews(card.viewCount),
+    card.publishedAt && publishedAgo(card.publishedAt),
+  ].filter(Boolean);
   return (
     <a href={`/watch?v=${encodeURIComponent(card.id)}`}>
       <div class="thumb">
         <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
         <span class="duration">{formatDuration(card.durationSec)}</span>
       </div>
-      <div class="title">{card.title}</div>
+      <div class="details">
+        {/* An empty circle until a sync fetches the avatar, so every card lines up. */}
+        <div class="avatar">{card.channelAvatar && <img src={card.channelAvatar} alt="" loading="lazy" />}</div>
+        <div class="text">
+          <div class="title">{card.title}</div>
+          {card.channelTitle && <div class="meta">{card.channelTitle}</div>}
+          {stats.length > 0 && <div class="meta">{stats.join(" • ")}</div>}
+        </div>
+      </div>
     </a>
   );
 }
@@ -446,8 +459,18 @@ const CSS = `
     font-weight: 500;
     line-height: 18px;
   }
+  .details { display: flex; gap: 12px; margin-top: 12px; }
+  .avatar {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--chip);
+  }
+  .avatar img { width: 100%; height: 100%; display: block; }
+  .text { min-width: 0; }
   .title {
-    margin-top: 12px;
     font-size: 16px;
     font-weight: 500;
     line-height: 22px;
@@ -457,6 +480,15 @@ const CSS = `
     overflow: hidden;
   }
   .card a:hover .title { text-decoration: underline; }
+  .title + .meta { margin-top: 4px; }
+  .meta {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* Card actions: icon buttons over the thumbnail's top-right corner, shown on
      hover or keyboard focus (always on touch screens, which can't hover). */
   .card { position: relative; }
@@ -481,6 +513,31 @@ const CSS = `
     background: rgba(0, 0, 0, 0.7);
   }
   .actions button:hover { background: rgba(0, 0, 0, 0.9); }
+  /* Each icon's name, shown at once on hover or keyboard focus (the native
+     title tooltip takes a second to appear). The last one hugs the card's
+     right edge so it can't spill off the page. */
+  .actions button { position: relative; }
+  .actions button::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(40, 40, 40, 0.95);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+    z-index: 1;
+  }
+  .actions button:last-child::after { left: auto; right: 0; transform: none; }
+  .actions button:hover::after, .actions button:focus-visible::after { opacity: 1; }
   .actions svg { width: 18px; height: 18px; fill: currentColor; }
   .shelf {
     margin: 48px 0;

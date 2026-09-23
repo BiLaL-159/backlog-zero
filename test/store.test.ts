@@ -60,6 +60,10 @@ const fetched = (over: Partial<FetchedItem> = {}): FetchedItem => ({
   addedAt: "2025-01-10T08:00:00Z",
   playlistId: "PLcooking",
   durationSec: 600,
+  channelTitle: "Pasta Grannies",
+  channelAvatar: "https://yt3.ggpht.com/pasta-grannies",
+  publishedAt: "2024-11-02T15:00:00Z",
+  viewCount: 1_234_567,
   ...over,
 });
 
