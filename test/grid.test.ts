@@ -121,6 +121,27 @@ test("an empty backlog picks nothing", () => {
   assert.deepEqual(pick({}), []);
 });
 
+test("a playlist tab picks only that playlist's videos", () => {
+  const videos: VideoMap = {
+    pasta: video({ playlistIds: ["PLcooking"] }),
+    pitch: video({ playlistIds: ["PLstartups"] }),
+    watched: video({ playlistIds: ["PLcooking"], status: "watched" }),
+  };
+  assert.deepEqual(pickCards(videos, { now: NOW, playlist: "PLcooking" }).map((c) => c.id), ["pasta"]);
+  assert.deepEqual(pick(videos).sort(), ["pasta", "pitch"]);
+});
+
+test("a video saved in several playlists is eligible under each tab", () => {
+  const videos: VideoMap = { both: video({ playlistIds: ["PLcooking", "PLstartups"] }) };
+  for (const playlist of ["PLcooking", "PLstartups"]) {
+    assert.deepEqual(pickCards(videos, { now: NOW, playlist }).map((c) => c.id), ["both"]);
+  }
+});
+
+test("an empty playlist tab picks nothing", () => {
+  assert.deepEqual(pickCards({ a: video() }, { now: NOW, playlist: "PLempty" }), []);
+});
+
 const cards = (...ids: string[]): Card[] => ids.map((id) => ({ ...video(), id }));
 const ids = (list: Card[]) => list.map((c) => c.id);
 
