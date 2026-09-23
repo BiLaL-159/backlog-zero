@@ -19,7 +19,8 @@ store so a concurrent sync can't undo it. Tabs above the grid ([All] plus one pe
 run the same picker over just that playlist's backlog, straight from the cache. Kept videos
 sit on their own "Worth a rewatch" shelf after the grid's first 12, shown on about a quarter
 of visits and rotating through the ones shown least recently (`PICKER.shelf`). The
-popup's Sync button syncs on demand and shows "synced X ago";
+popup's Sync button syncs on demand and shows "synced X ago"; its second button switches
+YouTube's normal home feed back on (and off again), live in any open tab;
 a `chrome.alarms` timer syncs every ~6h in the background without ever opening Google's
 consent screen (with no cached token it flags "sign-in needed" instead). Whenever any sync
 finishes, an open grid updates in place. Vite bundles `src/` into
