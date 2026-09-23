@@ -101,7 +101,9 @@ function App() {
   return (
     <>
       <style>{CSS}</style>
-      <Body state={state} />
+      <div class="root">
+        <Body state={state} />
+      </div>
     </>
   );
 }
@@ -312,15 +314,26 @@ function Toolbar({ backlog: { lastSyncedAt, signInNeeded } }: { backlog: Backlog
 
 // The card actions and what each stores. Re-roll stores nothing: the video only
 // leaves this page view, its status untouched.
-const ACTIONS: { label: string; hint: string; patch: () => VideoPatch | null }[] = [
-  { label: "Watched", hint: "Mark as watched", patch: () => ({ status: "watched" }) },
+const ACTIONS: { label: string; hint: string; icon: string; patch: () => VideoPatch | null }[] = [
+  { label: "Watched", hint: "Mark as watched", icon: "M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z", patch: () => ({ status: "watched" }) },
   {
     label: "Snooze",
-    hint: `Hide for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
+    hint: `Snooze: hide for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
+    icon: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z",
     patch: () => ({ snoozedUntil: new Date(Date.now() + PICKER.snoozeMs).toISOString() }),
   },
-  { label: "Keep", hint: "Worth rewatching: move to the Kept shelf", patch: () => ({ status: "kept" }) },
-  { label: "Re-roll", hint: "Show another video instead", patch: () => null },
+  {
+    label: "Keep",
+    hint: "Keep: worth rewatching, move to the Kept shelf",
+    icon: "M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.2L7 18V5h10v13z",
+    patch: () => ({ status: "kept" }),
+  },
+  {
+    label: "Re-roll",
+    hint: "Re-roll: show another video instead",
+    icon: "M17.6 6.4A8 8 0 1 0 19.7 14h-2.1a6 6 0 1 1-1.4-6.2L13 11h7V4l-2.4 2.4z",
+    patch: () => null,
+  },
 ];
 
 function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatch | null) => void }) {
@@ -329,8 +342,8 @@ function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatc
       <CardLink card={card} />
       <div class="actions">
         {ACTIONS.map((a) => (
-          <button key={a.label} title={a.hint} onClick={() => onAction(a.patch())}>
-            {a.label}
+          <button key={a.label} title={a.hint} aria-label={a.label} onClick={() => onAction(a.patch())}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={a.icon} /></svg>
           </button>
         ))}
       </div>
@@ -360,17 +373,35 @@ function Notice({ title, text }: { title: string; text: string }) {
   );
 }
 
-// Colors come from YouTube's own theme variables (custom properties inherit into
-// the shadow root even after `all: initial`), so the grid follows light/dark
-// mode; the fallbacks are YouTube's light theme.
+// The grid's own colors, switched by the `dark` attribute YouTube sets on <html>.
+// (YouTube's --yt-spec-* theme variables used to cover this, but they're gone.)
 const CSS = `
   :host {
     all: initial;
     display: block;
-    padding: 24px 16px;
     font-family: Roboto, Arial, sans-serif;
-    color: var(--yt-spec-text-primary, #0f0f0f);
+    --text: #0f0f0f;
+    --text-2: #606060;
+    --chip: rgba(0, 0, 0, 0.05);
+    --chip-hover: rgba(0, 0, 0, 0.1);
+    --line: rgba(0, 0, 0, 0.1);
+    --bg: #fff;
+    --error: #cc0000;
+    color: var(--text);
   }
+  :host-context(html[dark]) {
+    --text: #f1f1f1;
+    --text-2: #aaa;
+    --chip: rgba(255, 255, 255, 0.1);
+    --chip-hover: rgba(255, 255, 255, 0.2);
+    --line: rgba(255, 255, 255, 0.2);
+    --bg: #0f0f0f;
+    --error: #ff6b6b;
+  }
+  /* Padding lives here, not on :host, because YouTube's global reset
+     (div { padding: 0 }) beats :host rules. The top clears YouTube's frosted
+     header, which still reserves room for the chip bar we hide. */
+  .root { padding: 64px 24px 48px; }
   .toolbar {
     display: flex;
     align-items: center;
@@ -379,8 +410,8 @@ const CSS = `
     margin-bottom: 16px;
     font-size: 14px;
   }
-  .status { color: var(--yt-spec-text-secondary, #606060); }
-  .status.error { color: #e00; }
+  .status { color: var(--text-2); }
+  .status.error { color: var(--error); }
   button {
     font: inherit;
     font-weight: 500;
@@ -390,9 +421,9 @@ const CSS = `
     border-radius: 18px;
     cursor: pointer;
     color: inherit;
-    background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+    background: var(--chip);
   }
-  button:hover { background: var(--yt-spec-button-chip-background-hover, rgba(0, 0, 0, 0.1)); }
+  button:hover { background: var(--chip-hover); }
   button:disabled { opacity: 0.5; cursor: default; }
   .tabs { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
   .tab {
@@ -401,8 +432,8 @@ const CSS = `
     border-radius: 8px;
   }
   .tab.active, .tab.active:hover {
-    background: var(--yt-spec-text-primary, #0f0f0f);
-    color: var(--yt-spec-base-background, #fff);
+    background: var(--text);
+    color: var(--bg);
   }
   .grid {
     display: grid;
@@ -415,7 +446,7 @@ const CSS = `
     aspect-ratio: 16 / 9;
     border-radius: 12px;
     overflow: hidden;
-    background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+    background: var(--chip);
   }
   .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .duration {
@@ -441,21 +472,44 @@ const CSS = `
     overflow: hidden;
   }
   .card a:hover .title { text-decoration: underline; }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .actions button { height: 28px; padding: 0 10px; font-size: 12px; }
+  /* Card actions: icon buttons over the thumbnail's top-right corner, shown on
+     hover or keyboard focus (always on touch screens, which can't hover). */
+  .card { position: relative; }
+  .actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .card:hover .actions, .card:focus-within .actions { opacity: 1; }
+  @media (hover: none) { .actions { opacity: 1; } }
+  .actions button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.7);
+  }
+  .actions button:hover { background: rgba(0, 0, 0, 0.9); }
+  .actions svg { width: 18px; height: 18px; fill: currentColor; }
   .shelf {
     margin-top: 48px;
     padding-top: 24px;
-    border-top: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+    border-top: 1px solid var(--line);
   }
   .shelf h2 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
-  .grid-error { margin: 0 0 16px; font-size: 14px; color: #e00; }
+  .grid-error { margin: 0 0 16px; font-size: 14px; color: var(--error); }
   .notice { max-width: 480px; margin: 80px auto; text-align: center; }
   .notice h2 { font-size: 20px; font-weight: 500; margin: 0 0 8px; }
   .notice p {
     font-size: 14px;
     line-height: 20px;
     margin: 0;
-    color: var(--yt-spec-text-secondary, #606060);
+    color: var(--text-2);
   }
 `;
