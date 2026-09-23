@@ -20,4 +20,10 @@ export interface Backlog {
   signInNeeded?: boolean; // the background sync found no cached token; cleared by the next sync
 }
 
+// chrome.storage.local keys the popup writes directly: plain settings, not backlog
+// data, so they bypass the store.
+export interface Settings {
+  paused?: boolean; // show YouTube's own home feed instead of the grid
+}
+
 export type Response = ({ ok: true } & Backlog) | { ok: false; error: string };
