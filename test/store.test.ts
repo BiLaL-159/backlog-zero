@@ -95,6 +95,19 @@ test("a sync that starts after a patch sees the patched state", async () => {
   assert.equal(synced.videos.v1.snoozedUntil, "2026-10-01T00:00:00Z");
 });
 
+test("a card action survives a sync that finishes after it", async () => {
+  const store = createStore(memoryStorage({ videos: { v1: video(), v2: video() } }));
+  const until = "2026-09-30T12:00:00.000Z";
+  await Promise.all([
+    store.patchVideo("v1", { status: "watched" }),
+    store.patchVideo("v2", { snoozedUntil: until }),
+    store.applySync([fetched(), fetched({ videoId: "v2" })], PLAYLISTS, NOW),
+  ]);
+  const { videos } = await store.read();
+  assert.equal(videos?.v1.status, "watched");
+  assert.equal(videos?.v2.snoozedUntil, until);
+});
+
 test("patching a video that isn't stored changes nothing", async () => {
   const store = createStore(memoryStorage({ videos: { v1: video() } }));
   await store.patchVideo("nope", { status: "watched" });
