@@ -11,16 +11,21 @@ import type { Backlog, Message, Response } from "./lib/messages.ts";
 // serializes them (layout: Backlog in lib/messages.ts).
 const store = createStore(chrome.storage.local);
 
-const handlers: Record<Message["type"], () => Promise<Backlog>> = {
+type Handlers = { [T in Message["type"]]: (msg: Extract<Message, { type: T }>) => Promise<Backlog> };
+const handlers: Handlers = {
   SYNC: syncBacklog,
   GET_BACKLOG: store.read,
+  MARK_SHOWN: async ({ ids }) => {
+    await store.markShown(ids, new Date().toISOString());
+    return {};
+  },
 };
 
 chrome.runtime.onMessage.addListener(
   (msg: Message | undefined, _sender, sendResponse: (res: Response) => void) => {
-    const handler = msg && handlers[msg.type];
+    const handler = msg && (handlers[msg.type] as ((msg: Message) => Promise<Backlog>) | undefined);
     if (!handler) return;
-    handler()
+    handler(msg)
       .then((data) => sendResponse({ ok: true, ...data }))
       .catch((err: Error) => sendResponse({ ok: false, error: err.message }));
     return true; // keep the channel open for the async sendResponse

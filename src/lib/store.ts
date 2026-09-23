@@ -40,6 +40,16 @@ export function createStore(storage: BacklogStorage) {
     });
   }
 
+  // Stamp lastShownAt on the videos the grid just rendered, in one write.
+  function markShown(ids: string[], now: string): Promise<void> {
+    return serialized(async () => {
+      const { videos = {} } = await storage.get(["videos"]);
+      const next = { ...videos };
+      for (const id of ids) if (next[id]) next[id] = { ...next[id], lastShownAt: now };
+      await storage.set({ videos: next });
+    });
+  }
+
   // Merge one full YouTube fetch into whatever is stored at this moment.
   function applySync(fetched: FetchedItem[], playlists: Playlist[], now: string): Promise<Required<Backlog>> {
     return serialized(async () => {
@@ -50,5 +60,5 @@ export function createStore(storage: BacklogStorage) {
     });
   }
 
-  return { read, patchVideo, applySync };
+  return { read, patchVideo, markShown, applySync };
 }
