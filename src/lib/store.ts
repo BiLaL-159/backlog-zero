@@ -5,7 +5,7 @@ import type { Backlog } from "./messages.ts";
 import type { Playlist } from "./youtube.ts";
 import { mergeBacklog, type FetchedItem, type Video } from "./sync.ts";
 
-const KEYS: (keyof Backlog)[] = ["videos", "playlists", "lastSyncedAt"];
+const KEYS: (keyof Backlog)[] = ["videos", "playlists", "lastSyncedAt", "signInNeeded"];
 
 // The slice of chrome.storage.local we use.
 export interface BacklogStorage {
@@ -50,15 +50,20 @@ export function createStore(storage: BacklogStorage) {
     });
   }
 
+  // The background sync couldn't get a token without asking the user.
+  function flagSignInNeeded(): Promise<void> {
+    return serialized(() => storage.set({ signInNeeded: true }));
+  }
+
   // Merge one full YouTube fetch into whatever is stored at this moment.
   function applySync(fetched: FetchedItem[], playlists: Playlist[], now: string): Promise<Required<Backlog>> {
     return serialized(async () => {
       const { videos: prev = {} } = await storage.get(["videos"]);
-      const next = { videos: mergeBacklog(prev, fetched, now), playlists, lastSyncedAt: now };
+      const next = { videos: mergeBacklog(prev, fetched, now), playlists, lastSyncedAt: now, signInNeeded: false };
       await storage.set(next);
       return next;
     });
   }
 
-  return { read, patchVideo, markShown, applySync };
+  return { read, patchVideo, markShown, flagSignInNeeded, applySync };
 }

@@ -101,6 +101,14 @@ test("patching a video that isn't stored changes nothing", async () => {
   assert.deepEqual(await store.read(), { videos: { v1: video() } });
 });
 
+test("a sign-in flag from the background sync is cleared by the next successful sync", async () => {
+  const store = createStore(memoryStorage({ videos: { v1: video() } }));
+  await store.flagSignInNeeded();
+  assert.equal((await store.read()).signInNeeded, true);
+  await store.applySync([fetched()], PLAYLISTS, NOW);
+  assert.equal((await store.read()).signInNeeded, false);
+});
+
 test("a failed write doesn't block the writes queued behind it", async () => {
   const storage = memoryStorage({ videos: { v1: video() } });
   const set = storage.set;
