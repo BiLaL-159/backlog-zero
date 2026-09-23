@@ -1,5 +1,5 @@
 // Background service worker: the only place that holds the OAuth token and talks
-// to the YouTube API. The popup (and later the content script) send it messages;
+// to the YouTube API. The popup and the content script send it messages;
 // it does the privileged work and sends data back.
 import { getToken, removeCachedToken } from "./lib/auth.ts";
 import { listMyPlaylists, listPlaylistItems, getVideoDurations, ApiError } from "./lib/youtube.ts";

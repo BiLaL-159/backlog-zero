@@ -3,12 +3,14 @@
 A Chrome extension that replaces YouTube's home feed with your own playlist backlog,
 weighted so you actually watch it and the pile shrinks to zero.
 
-## Status: step 2 — backlog synced to local storage
+## Status: step 3 — backlog grid on YouTube's home page
 MV3 extension written in TypeScript. Signs in with Google (`youtube.readonly`), fetches every
 video in your custom playlists (with durations), and merges them into a backlog in
-`chrome.storage.local` without losing what you've marked. Vite bundles `src/` into
+`chrome.storage.local` without losing what you've marked. On youtube.com's home page the
+recommendation feed is hidden and a grid of your backlog (Preact in a Shadow DOM) takes its
+place — for now simply the first 24 unseen videos, no ranking yet. Vite bundles `src/` into
 `dist/`: the popup and background worker as ES modules, the content script as a classic
-script (MV3 content scripts can't be modules). Preact is set up for the on-page grid (step 3).
+script (MV3 content scripts can't be modules).
 
 ```
 npm install
@@ -28,21 +30,22 @@ vite.config.ts       build: pages + worker pass, then a classic-script pass for 
 src/
   background.ts      service worker: holds the token, calls the API, answers messages
   popup.html/ts      dumb UI: shows the cached backlog, "Sync" re-fetches
-  content.tsx        content script on youtube.com (stub until the grid lands)
+  content.tsx        content script: swaps YouTube's home feed for the backlog grid
   lib/
     auth.ts          chrome.identity token helpers
     youtube.ts       read-only YouTube Data API v3 wrappers (playlists, items, durations)
     sync.ts          backlog data model + pure merge of fresh YouTube data into it
     store.ts         the one serialized path for reading/writing the stored backlog
-    messages.ts      popup ↔ background message and storage types
+    grid.ts          which videos the grid shows + duration formatting
+    messages.ts      popup/content ↔ background message and storage types
 dist/                bundled output that the manifest loads (git-ignored; `npm run build`)
 test/                node:test specs for the pure logic — run `npm test` (Node 23.6+)
 ```
 
 ## Roadmap (from the spec)
 1. MV3 skeleton + sign-in + fetch playlists
-2. **Normalize into `chrome.storage.local` model + cache/refresh** ← you are here
-3. Content-script injection on youtube.com (Preact in Shadow DOM)
+2. Normalize into `chrome.storage.local` model + cache/refresh
+3. **Content-script injection on youtube.com (Preact in Shadow DOM)** ← you are here
 4. Weighted picker + hard filters
 5. Actions: watched / snooze / keep + live grid updates
 6. Filter tabs (All + per-playlist)
