@@ -33,6 +33,7 @@ src/
     auth.ts          chrome.identity token helpers
     youtube.ts       read-only YouTube Data API v3 wrappers (playlists, items, durations)
     sync.ts          backlog data model + pure merge of fresh YouTube data into it
+    store.ts         the one serialized path for reading/writing the stored backlog
     messages.ts      popup ↔ background message and storage types
 dist/                bundled output that the manifest loads (git-ignored; `npm run build`)
 test/                node:test specs for the pure logic — run `npm test` (Node 23.6+)

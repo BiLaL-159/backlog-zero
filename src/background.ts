@@ -3,7 +3,8 @@
 // it does the privileged work and sends data back.
 import { getToken, removeCachedToken } from "./lib/auth.ts";
 import { listMyPlaylists, listPlaylistItems, getVideoDurations, ApiError } from "./lib/youtube.ts";
-import { mergeBacklog, parseDuration, type FetchedItem, type VideoMap } from "./lib/sync.ts";
+import { parseDuration, type FetchedItem } from "./lib/sync.ts";
+import { createStore } from "./lib/store.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
 
 // chrome.storage.local layout (see Backlog in lib/messages.ts):
@@ -11,11 +12,12 @@ import type { Backlog, Message, Response } from "./lib/messages.ts";
 //                            snoozedUntil, lastShownAt, removedAt }
 //   playlists    [{ id, title, count }]
 //   lastSyncedAt ISO timestamp of the last successful sync
-const STORAGE_KEYS: (keyof Backlog)[] = ["videos", "playlists", "lastSyncedAt"];
+// Every read and write goes through this one store, which serializes them.
+const store = createStore(chrome.storage.local);
 
 const handlers: Record<Message["type"], () => Promise<Backlog>> = {
   SYNC: syncBacklog,
-  GET_BACKLOG: () => chrome.storage.local.get<Backlog>(STORAGE_KEYS),
+  GET_BACKLOG: store.read,
 };
 
 chrome.runtime.onMessage.addListener(
@@ -62,13 +64,9 @@ async function fetchAndStore(token: string): Promise<Required<Backlog>> {
     durationSec: durations.has(it.videoId) ? parseDuration(durations.get(it.videoId)) : null,
   }));
 
-  // Read the stored backlog only now, after the slow fetch, to shrink the window
-  // in which a user action could be overwritten by a stale copy. It is still a
-  // non-atomic read-modify-write; step 5's action writes must account for that.
-  const { videos: prev = {} } = await chrome.storage.local.get<{ videos?: VideoMap }>("videos");
-  const lastSyncedAt = new Date().toISOString();
-  const videos = mergeBacklog(prev, fetched, lastSyncedAt);
-  await chrome.storage.local.set({ videos, playlists, lastSyncedAt });
-  console.log(`[Backlog Zero] synced ${Object.keys(videos).length} videos`);
-  return { videos, playlists, lastSyncedAt };
+  // The slow fetch is done; the merge runs in the store's queue against whatever
+  // is stored by then, so user changes made during the fetch survive.
+  const synced = await store.applySync(fetched, playlists, new Date().toISOString());
+  console.log(`[Backlog Zero] synced ${Object.keys(synced.videos).length} videos`);
+  return synced;
 }
