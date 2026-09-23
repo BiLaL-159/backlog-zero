@@ -3,7 +3,10 @@
 import type { VideoMap } from "./sync.ts";
 import type { Playlist } from "./youtube.ts";
 
-export type Message = { type: "SYNC" } | { type: "GET_BACKLOG" };
+export type Message =
+  | { type: "SYNC" }
+  | { type: "GET_BACKLOG" }
+  | { type: "MARK_SHOWN"; ids: string[] }; // the grid rendered these cards
 
 // chrome.storage.local layout. Every key is absent until the first sync.
 export interface Backlog {

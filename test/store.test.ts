@@ -42,6 +42,17 @@ test("a patched video reads back with the patch applied", async () => {
 });
 
 const NOW = "2026-09-23T12:00:00.000Z";
+
+test("markShown stamps lastShownAt on just the rendered videos", async () => {
+  const store = createStore(memoryStorage({ videos: { v1: video(), v2: video(), v3: video() } }));
+  await store.markShown(["v1", "v3", "gone"], NOW);
+  const { videos } = await store.read();
+  assert.equal(videos?.v1.lastShownAt, NOW);
+  assert.equal(videos?.v2.lastShownAt, null);
+  assert.equal(videos?.v3.lastShownAt, NOW);
+  assert.equal(videos && "gone" in videos, false);
+});
+
 const PLAYLISTS = [{ id: "PLcooking", title: "Cooking", count: 1 }];
 const fetched = (over: Partial<FetchedItem> = {}): FetchedItem => ({
   videoId: "v1",

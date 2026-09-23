@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCards, formatDuration } from "../src/lib/grid.ts";
+import { pickCards, formatDuration, PICKER } from "../src/lib/grid.ts";
 import type { Video, VideoMap } from "../src/lib/sync.ts";
+
+const NOW = new Date("2026-09-23T12:00:00Z");
+const DAY = 24 * 60 * 60 * 1000;
+const daysAgo = (d: number) => new Date(NOW.getTime() - d * DAY).toISOString();
+const inDays = (d: number) => daysAgo(-d);
 
 const video = (over: Partial<Video> = {}): Video => ({
   title: "How to make pasta",
@@ -15,26 +20,98 @@ const video = (over: Partial<Video> = {}): Video => ({
   ...over,
 });
 
-test("pickCards shows only unseen videos still saved on YouTube", () => {
+// No variety unless a test asks for it, so the order is deterministic.
+const pick = (videos: VideoMap, n = 10, random: (id: string) => number = () => 0) =>
+  pickCards(videos, { now: NOW, n, random }).map((c) => c.id);
+
+test("older saves rank higher", () => {
+  const videos = { mid: video({ dateAdded: daysAgo(30) }), old: video({ dateAdded: daysAgo(300) }), new: video({ dateAdded: daysAgo(1) }) };
+  assert.deepEqual(pick(videos), ["old", "mid", "new"]);
+});
+
+test("shorter videos rank higher", () => {
+  const videos = { mid: video({ durationSec: 1200 }), long: video({ durationSec: 7200 }), short: video({ durationSec: 90 }) };
+  assert.deepEqual(pick(videos), ["short", "mid", "long"]);
+});
+
+test("old-and-short beats one-or-the-other beats neither", () => {
+  const videos = {
+    neither: video({ dateAdded: daysAgo(1), durationSec: 7200 }),
+    oldOnly: video({ dateAdded: daysAgo(300), durationSec: 7200 }),
+    both: video({ dateAdded: daysAgo(300), durationSec: 90 }),
+  };
+  assert.deepEqual(pick(videos), ["both", "oldOnly", "neither"]);
+});
+
+test("the random part adds variety without overriding age and length", () => {
+  const videos = {
+    a: video({ dateAdded: daysAgo(300) }),
+    b: video({ dateAdded: daysAgo(299) }),
+    c: video({ dateAdded: daysAgo(100) }),
+    d: video({ dateAdded: daysAgo(1), durationSec: 7200 }),
+  };
+  // Lucky b overtakes a's small age lead; d is so new and long that luck can't save it.
+  const lucky = (id: string) => (id === "b" || id === "d" ? 1 : 0);
+  assert.deepEqual(pick(videos, 10, lucky), ["b", "a", "c", "d"]);
+});
+
+test("the score weights sum to 1", () => {
+  const { old, short, random } = PICKER.weights;
+  assert.equal(old + short + random, 1);
+});
+
+test("watched, kept, archived and removed videos never appear", () => {
   const videos: VideoMap = {
     a: video(),
     watched: video({ status: "watched" }),
     kept: video({ status: "kept" }),
-    removed: video({ removedAt: "2026-01-01T00:00:00Z", playlistIds: [] }),
-    b: video({ title: "Startup advice" }),
+    archived: video({ status: "archived" }),
+    removed: video({ removedAt: daysAgo(2), playlistIds: [] }),
   };
-  const cards = pickCards(videos, 10);
-  assert.deepEqual(cards.map((c) => c.id), ["a", "b"]);
-  assert.equal(cards[1].title, "Startup advice");
+  assert.deepEqual(pick(videos), ["a"]);
 });
 
-test("pickCards caps the grid at n cards", () => {
-  const videos: VideoMap = { a: video(), b: video(), c: video() };
-  assert.deepEqual(pickCards(videos, 2).map((c) => c.id), ["a", "b"]);
+test("a snoozed video stays hidden until its snooze ends", () => {
+  const videos: VideoMap = { a: video(), snoozed: video({ snoozedUntil: inDays(2) }), woke: video({ snoozedUntil: daysAgo(1) }) };
+  assert.deepEqual(pick(videos).sort(), ["a", "woke"]);
 });
 
-test("pickCards on an empty backlog is empty", () => {
-  assert.deepEqual(pickCards({}, 10), []);
+test("recently shown videos sit out while enough others remain", () => {
+  const videos: VideoMap = {
+    shownToday: video({ lastShownAt: daysAgo(0.1) }),
+    shownLongAgo: video({ lastShownAt: daysAgo(30) }),
+    a: video(),
+    b: video(),
+  };
+  assert.deepEqual(pick(videos, 3).sort(), ["a", "b", "shownLongAgo"]);
+});
+
+test("a small backlog fills the grid from recently shown videos instead of going empty", () => {
+  const videos: VideoMap = {
+    shownOld: video({ lastShownAt: daysAgo(1), dateAdded: daysAgo(300) }),
+    shownNew: video({ lastShownAt: daysAgo(1), dateAdded: daysAgo(1) }),
+    fresh: video({ dateAdded: daysAgo(1) }),
+  };
+  // The fresh video still leads, then the recently shown ones by score.
+  assert.deepEqual(pick(videos, 3), ["fresh", "shownOld", "shownNew"]);
+  assert.deepEqual(pick({ only: video({ lastShownAt: daysAgo(0.1) }) }), ["only"]);
+});
+
+test("the grid is capped at n cards, keeping the best", () => {
+  const videos: VideoMap = {};
+  for (let i = 1; i <= 30; i++) videos[`v${i}`] = video({ dateAdded: daysAgo(i) });
+  assert.equal(pickCards(videos, { now: NOW }).length, PICKER.gridSize);
+  assert.deepEqual(pick(videos, 2), ["v30", "v29"]);
+});
+
+test("cards carry the video's id and fields", () => {
+  const [card] = pickCards({ a: video({ title: "Startup advice" }) }, { now: NOW });
+  assert.equal(card.id, "a");
+  assert.equal(card.title, "Startup advice");
+});
+
+test("an empty backlog picks nothing", () => {
+  assert.deepEqual(pick({}), []);
 });
 
 test("formatDuration matches YouTube's timestamps", () => {

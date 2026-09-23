@@ -7,11 +7,11 @@
 //   - re-inject on yt-navigate-finish (YouTube's soft navigations), no polling
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { pickCards, formatDuration, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
+import type { VideoMap } from "./lib/sync.ts";
 
-const GRID_SIZE = 24;
 // YouTube keeps every page it has visited in the DOM and just hides the inactive
 // ones, so scope to the home browse page.
 const FEED = 'ytd-browse[page-subtype="home"] ytd-two-column-browse-results-renderer ytd-rich-grid-renderer';
@@ -65,12 +65,16 @@ type State =
 // background worker.
 async function loadBacklog(): Promise<State> {
   try {
-    const res: Response = await chrome.runtime.sendMessage<Message>({ type: "GET_BACKLOG" });
+    const res = await send({ type: "GET_BACKLOG" });
     return res?.ok ? { kind: "ready", backlog: res } : { kind: "error", error: res?.error ?? "No response" };
   } catch (err) {
     // e.g. "Extension context invalidated" after the extension is reloaded
     return { kind: "error", error: (err as Error).message };
   }
+}
+
+function send(msg: Message): Promise<Response> {
+  return chrome.runtime.sendMessage<Message, Response>(msg);
 }
 
 function App() {
@@ -102,7 +106,17 @@ function Body({ state }: { state: State }) {
       />
     );
   }
-  const cards = pickCards(videos, GRID_SIZE);
+  return <Grid videos={videos} />;
+}
+
+function Grid({ videos }: { videos: VideoMap }) {
+  // Picked once per load: the random part mustn't reshuffle the grid on re-render.
+  const cards = useMemo(() => pickCards(videos, { now: new Date() }), [videos]);
+  // Only the cards actually rendered count as shown.
+  useEffect(() => {
+    if (cards.length) send({ type: "MARK_SHOWN", ids: cards.map((c) => c.id) }).catch(() => {}); // best effort
+  }, [cards]);
+
   if (!cards.length) return <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />;
   return (
     <div class="grid">
