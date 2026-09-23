@@ -8,7 +8,7 @@
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
-import { pickCards, fillSlots, formatDuration, timeAgo, PICKER, type Card } from "./lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, timeAgo, PICKER, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 import type { Playlist } from "./lib/youtube.ts";
@@ -123,12 +123,14 @@ function Body({ state }: { state: State }) {
 }
 
 // Fixed for the whole page view, so a live update after a sync re-picks the same
-// cards unless the backlog itself changed (see wasShownRecently in lib/grid.ts).
+// cards unless the backlog itself changed (see wasShownRecently in lib/grid.ts),
+// and the Kept shelf either shows for the whole visit or not at all.
 function usePageView() {
   const [view] = useState(() => {
     const draws = new Map<string, number>();
     return {
       now: new Date(),
+      shelfRoll: Math.random(),
       random: (id: string) => draws.get(id) ?? draws.set(id, Math.random()).get(id)!,
     };
   });
@@ -137,7 +139,8 @@ function usePageView() {
 
 type PageView = ReturnType<typeof usePageView>;
 
-// The tabs and the grid. Switching tabs re-picks from the cached backlog.
+// The tabs, the grid and, on some visits, the Kept shelf below them. Switching
+// tabs re-picks from the cached backlog.
 function Home({ backlog: { videos = {}, playlists = [] } }: { backlog: Backlog }) {
   const view = usePageView();
   const [tab, setTab] = useState<string | null>(null); // a playlist id; null = All
@@ -159,7 +162,34 @@ function Home({ backlog: { videos = {}, playlists = [] } }: { backlog: Backlog }
         gone={gone}
         setGone={setGone}
       />
+      <Shelf videos={videos} view={view} />
     </>
+  );
+}
+
+// Kept videos, apart from the backlog and only on some visits (PICKER.shelf), so
+// rewatching doesn't compete with draining the pile.
+function Shelf({ videos, view }: { videos: VideoMap; view: PageView }) {
+  const cards = useMemo(
+    () => pickShelf(videos, { now: view.now, roll: view.shelfRoll, random: view.random }),
+    [videos, view]
+  );
+  // Stamped like the grid's cards, so the next shelf shows other kept videos.
+  useEffect(() => {
+    if (cards.length) send({ type: "MARK_SHOWN", ids: cards.map((c) => c.id) }).catch(() => {}); // best effort
+  }, [cards]);
+  if (!cards.length) return null;
+  return (
+    <section class="shelf">
+      <h2>Worth a rewatch</h2>
+      <div class="grid">
+        {cards.map((c) => (
+          <div class="card" key={c.id}>
+            <CardLink card={c} />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -289,20 +319,14 @@ const ACTIONS: { label: string; hint: string; patch: () => VideoPatch | null }[]
     hint: `Hide for ${Math.round(PICKER.snoozeMs / 86_400_000)} days`,
     patch: () => ({ snoozedUntil: new Date(Date.now() + PICKER.snoozeMs).toISOString() }),
   },
-  { label: "Keep", hint: "Worth rewatching: move out of the backlog", patch: () => ({ status: "kept" }) },
+  { label: "Keep", hint: "Worth rewatching: move to the Kept shelf", patch: () => ({ status: "kept" }) },
   { label: "Re-roll", hint: "Show another video instead", patch: () => null },
 ];
 
 function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatch | null) => void }) {
   return (
     <div class="card">
-      <a href={`/watch?v=${encodeURIComponent(card.id)}`}>
-        <div class="thumb">
-          <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
-          <span class="duration">{formatDuration(card.durationSec)}</span>
-        </div>
-        <div class="title">{card.title}</div>
-      </a>
+      <CardLink card={card} />
       <div class="actions">
         {ACTIONS.map((a) => (
           <button key={a.label} title={a.hint} onClick={() => onAction(a.patch())}>
@@ -311,6 +335,19 @@ function VideoCard({ card, onAction }: { card: Card; onAction: (patch: VideoPatc
         ))}
       </div>
     </div>
+  );
+}
+
+// Thumbnail, duration and title, linking to the video.
+function CardLink({ card }: { card: Card }) {
+  return (
+    <a href={`/watch?v=${encodeURIComponent(card.id)}`}>
+      <div class="thumb">
+        <img src={`https://i.ytimg.com/vi/${encodeURIComponent(card.id)}/mqdefault.jpg`} alt="" loading="lazy" />
+        <span class="duration">{formatDuration(card.durationSec)}</span>
+      </div>
+      <div class="title">{card.title}</div>
+    </a>
   );
 }
 
@@ -406,6 +443,12 @@ const CSS = `
   .card a:hover .title { text-decoration: underline; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .actions button { height: 28px; padding: 0 10px; font-size: 12px; }
+  .shelf {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+  }
+  .shelf h2 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
   .grid-error { margin: 0 0 16px; font-size: 14px; color: #e00; }
   .notice { max-width: 480px; margin: 80px auto; text-align: center; }
   .notice h2 { font-size: 20px; font-weight: 500; margin: 0 0 8px; }

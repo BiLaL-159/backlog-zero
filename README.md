@@ -3,7 +3,7 @@
 A Chrome extension that replaces YouTube's home feed with your own playlist backlog,
 weighted so you actually watch it and the pile shrinks to zero.
 
-## Status: steps 4–7 — weighted picker, card actions, filter tabs, refresh + background sync
+## Status: build complete — weighted picker, card actions, filter tabs, Kept shelf, refresh + background sync
 MV3 extension written in TypeScript. Signs in with Google (`youtube.readonly`), fetches every
 video in your custom playlists (with durations), and merges them into a backlog in
 `chrome.storage.local` without losing what you've marked. On youtube.com's home page the
@@ -14,7 +14,9 @@ shown in the last 3 days sit out while enough others remain (tunables: `PICKER` 
 `lib/grid.ts`). Each card has Watched, Snooze (7 days), Keep and Re-roll; the card leaves
 at once and the next pick takes its slot, and the change is saved through the serialized
 store so a concurrent sync can't undo it. Tabs above the grid ([All] plus one per playlist)
-run the same picker over just that playlist's backlog, straight from the cache. A Refresh
+run the same picker over just that playlist's backlog, straight from the cache. Kept videos
+sit on their own "Worth a rewatch" shelf below the grid, shown on about a quarter of visits
+and rotating through the ones shown least recently (`PICKER.shelf`). A Refresh
 button above the grid syncs on demand and shows "synced X ago";
 a `chrome.alarms` timer syncs every ~6h in the background without ever opening Google's
 consent screen (with no cached token it flags "sign-in needed" instead). Whenever any sync
@@ -46,7 +48,7 @@ src/
     youtube.ts       read-only YouTube Data API v3 wrappers (playlists, items, durations)
     sync.ts          backlog data model + pure merge of fresh YouTube data into it
     store.ts         the one serialized path for reading/writing the stored backlog
-    grid.ts          weighted picker, slot backfill after card actions, duration/time formatting
+    grid.ts          weighted picker, slot backfill after card actions, Kept shelf, duration/time formatting
     messages.ts      popup/content ↔ background message and storage types
 dist/                bundled output that the manifest loads (git-ignored; `npm run build`)
 test/                node:test specs for the pure logic — run `npm test` (Node 23.6+)
@@ -60,3 +62,4 @@ test/                node:test specs for the pure logic — run `npm test` (Node
 5. **Actions: watched / snooze / keep + live grid updates** ✓
 6. **Filter tabs (All + per-playlist)** ✓
 7. **Manual refresh + `chrome.alarms` timer** ✓
+8. **Kept shelf** ✓

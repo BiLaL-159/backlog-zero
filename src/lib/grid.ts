@@ -11,6 +11,9 @@ export const PICKER = {
   recentlyShownMs: 3 * 24 * 60 * 60 * 1000,
   // How long the Snooze action hides a video.
   snoozeMs: 7 * 24 * 60 * 60 * 1000,
+  // The Kept shelf: the share of home page views that show it (0 = never, 1 =
+  // every visit), and how many kept videos it holds.
+  shelf: { chance: 0.25, size: 4 },
 };
 
 export interface Card extends Video {
@@ -65,6 +68,36 @@ export function fillSlots(prev: string[], ranked: Card[], n = PICKER.gridSize): 
   const spare = ranked.filter((c) => !onScreen.has(c.id));
   const slots = prev.map((id) => byId.get(id) ?? spare.shift()).filter((c) => c != null);
   return [...slots, ...spare].slice(0, n);
+}
+
+export interface ShelfOptions {
+  now: Date;
+  // 0..1, drawn once per page view; the shelf shows when it's under the chance.
+  roll: number;
+  n?: number;
+  // 0..1 tie-break between videos never shown; injectable so tests are deterministic.
+  random?: (id: string) => number;
+}
+
+// The Kept shelf for this page view: nothing on most visits (see PICKER.shelf),
+// otherwise the kept videos shown least recently, so the shelf rotates through
+// them. Kept videos never reach the grid (pickCards drops them), so the two
+// never overlap.
+export function pickShelf(
+  videos: VideoMap,
+  { now, roll, n = PICKER.shelf.size, random = () => Math.random() }: ShelfOptions
+): Card[] {
+  if (roll >= PICKER.shelf.chance) return [];
+  // Like wasShownRecently, a stamp from this page view doesn't count, so a live
+  // re-pick after a sync keeps the shelf it just stamped.
+  const shownAt = (v: Video) =>
+    v.lastShownAt != null && Date.parse(v.lastShownAt) < now.getTime() ? Date.parse(v.lastShownAt) : -Infinity;
+  return Object.entries(videos)
+    .filter(([, v]) => v.status === "kept" && !v.removedAt)
+    .map(([id, v]) => ({ card: { ...v, id }, shownAt: shownAt(v), draw: random(id) }))
+    .sort((a, b) => a.shownAt - b.shownAt || b.draw - a.draw)
+    .slice(0, n)
+    .map((s) => s.card);
 }
 
 function isSnoozed(video: Video, now: Date): boolean {
