@@ -13,6 +13,7 @@ export interface Backlog {
   videos?: VideoMap;
   playlists?: Playlist[];
   lastSyncedAt?: string; // ISO timestamp of the last successful sync
+  signInNeeded?: boolean; // the background sync found no cached token; cleared by the next sync
 }
 
 export type Response = ({ ok: true } & Backlog) | { ok: false; error: string };

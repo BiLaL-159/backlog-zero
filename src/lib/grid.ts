@@ -49,8 +49,12 @@ function isSnoozed(video: Video, now: Date): boolean {
   return video.snoozedUntil != null && Date.parse(video.snoozedUntil) > now.getTime();
 }
 
+// Stamps at or after `now` come from this same page view (the grid picks, then
+// stamps), so they don't count: a live re-pick keeps the cards already on screen.
 function wasShownRecently(video: Video, now: Date): boolean {
-  return video.lastShownAt != null && now.getTime() - Date.parse(video.lastShownAt) < PICKER.recentlyShownMs;
+  if (video.lastShownAt == null) return false;
+  const ago = now.getTime() - Date.parse(video.lastShownAt);
+  return ago > 0 && ago < PICKER.recentlyShownMs;
 }
 
 // Each value's place among all of them, 0 (smallest) → 1 (largest); ties share a
@@ -61,6 +65,15 @@ function ranks(values: number[]): number[] {
   const place = new Map<number, number>();
   sorted.forEach((v, i) => place.has(v) || place.set(v, i));
   return values.map((v) => (sorted.length > 1 ? place.get(v)! / (sorted.length - 1) : 1));
+}
+
+// ISO timestamp → "just now", "5 min ago", "2h ago", "3d ago".
+export function timeAgo(iso: string, now = Date.now()): string {
+  const min = Math.round((now - Date.parse(iso)) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
 // Seconds → YouTube-style timestamp: "0:45", "12:05", "1:02:03".

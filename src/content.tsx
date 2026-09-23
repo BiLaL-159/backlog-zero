@@ -8,7 +8,7 @@
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { pickCards, formatDuration, type Card } from "./lib/grid.ts";
+import { pickCards, formatDuration, timeAgo, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 
@@ -77,12 +77,24 @@ function send(msg: Message): Promise<Response> {
   return chrome.runtime.sendMessage<Message, Response>(msg);
 }
 
+// Any sync (popup, grid button, timer) ends by writing one of these keys, so a
+// change to them means there's something new to show.
+const SYNC_KEYS = ["lastSyncedAt", "signInNeeded"];
+
 function App() {
   const [state, setState] = useState<State>({ kind: "loading" });
   useEffect(() => {
     let live = true;
-    loadBacklog().then((s) => live && setState(s));
-    return () => void (live = false);
+    const reload = () => loadBacklog().then((s) => live && setState(s));
+    const onChanged = (changes: Record<string, unknown>, area: string) => {
+      if (area === "local" && SYNC_KEYS.some((k) => k in changes)) reload();
+    };
+    reload();
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => {
+      live = false;
+      chrome.storage.onChanged.removeListener(onChanged);
+    };
   }, []);
 
   return (
@@ -98,20 +110,34 @@ function Body({ state }: { state: State }) {
   if (state.kind === "error") return <Notice title="Backlog Zero couldn't load your backlog" text={state.error} />;
 
   const { videos = {}, lastSyncedAt } = state.backlog;
-  if (!lastSyncedAt) {
-    return (
-      <Notice
-        title="Nothing synced yet"
-        text="Click the Backlog Zero icon in your browser toolbar and hit “Sync from YouTube” to pull in your playlists."
-      />
-    );
-  }
-  return <Grid videos={videos} />;
+  return (
+    <>
+      <Toolbar backlog={state.backlog} />
+      {lastSyncedAt ? (
+        <Grid videos={videos} />
+      ) : (
+        <Notice title="Nothing synced yet" text="Hit Refresh to pull in your playlists." />
+      )}
+    </>
+  );
+}
+
+// Fixed for the whole page view, so a live update after a sync re-picks the same
+// cards unless the backlog itself changed (see wasShownRecently in lib/grid.ts).
+function usePageView() {
+  const [view] = useState(() => {
+    const draws = new Map<string, number>();
+    return {
+      now: new Date(),
+      random: (id: string) => draws.get(id) ?? draws.set(id, Math.random()).get(id)!,
+    };
+  });
+  return view;
 }
 
 function Grid({ videos }: { videos: VideoMap }) {
-  // Picked once per load: the random part mustn't reshuffle the grid on re-render.
-  const cards = useMemo(() => pickCards(videos, { now: new Date() }), [videos]);
+  const view = usePageView();
+  const cards = useMemo(() => pickCards(videos, view), [videos, view]);
   // Only the cards actually rendered count as shown.
   useEffect(() => {
     if (cards.length) send({ type: "MARK_SHOWN", ids: cards.map((c) => c.id) }).catch(() => {}); // best effort
@@ -123,6 +149,44 @@ function Grid({ videos }: { videos: VideoMap }) {
       {cards.map((c) => (
         <VideoCard key={c.id} card={c} />
       ))}
+    </div>
+  );
+}
+
+type SyncState = { kind: "idle" } | { kind: "syncing" } | { kind: "error"; error: string };
+
+// "Synced 2h ago" + Refresh. A successful sync needs no handling here: the new
+// backlog arrives through App's storage listener, like any other sync.
+function Toolbar({ backlog: { lastSyncedAt, signInNeeded } }: { backlog: Backlog }) {
+  const [sync, setSync] = useState<SyncState>({ kind: "idle" });
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), 60_000); // keep "X ago" current
+    return () => clearInterval(timer);
+  }, []);
+
+  async function refresh() {
+    setSync({ kind: "syncing" });
+    try {
+      const res = await send({ type: "SYNC" });
+      setSync(res?.ok ? { kind: "idle" } : { kind: "error", error: res?.error ?? "No response" });
+    } catch (err) {
+      setSync({ kind: "error", error: (err as Error).message });
+    }
+  }
+
+  const [text, isError] =
+    sync.kind === "syncing" ? ["Syncing…", false]
+    : sync.kind === "error" ? [`Sync failed: ${sync.error}`, true]
+    : signInNeeded ? ["Sign-in needed — hit Refresh to sign in", true]
+    : lastSyncedAt ? [`Synced ${timeAgo(lastSyncedAt)}`, false]
+    : ["Not synced yet", false];
+  return (
+    <div class="toolbar">
+      <span class={isError ? "status error" : "status"}>{text}</span>
+      <button onClick={refresh} disabled={sync.kind === "syncing"}>
+        Refresh
+      </button>
     </div>
   );
 }
@@ -159,6 +223,29 @@ const CSS = `
     font-family: Roboto, Arial, sans-serif;
     color: var(--yt-spec-text-primary, #0f0f0f);
   }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+  .status { color: var(--yt-spec-text-secondary, #606060); }
+  .status.error { color: #e00; }
+  button {
+    font: inherit;
+    font-weight: 500;
+    padding: 0 16px;
+    height: 36px;
+    border: none;
+    border-radius: 18px;
+    cursor: pointer;
+    color: inherit;
+    background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+  }
+  button:hover { background: var(--yt-spec-button-chip-background-hover, rgba(0, 0, 0, 0.1)); }
+  button:disabled { opacity: 0.5; cursor: default; }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

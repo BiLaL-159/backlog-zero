@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCards, formatDuration, PICKER } from "../src/lib/grid.ts";
+import { pickCards, formatDuration, timeAgo, PICKER } from "../src/lib/grid.ts";
 import type { Video, VideoMap } from "../src/lib/sync.ts";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
@@ -86,6 +86,13 @@ test("recently shown videos sit out while enough others remain", () => {
   assert.deepEqual(pick(videos, 3).sort(), ["a", "b", "shownLongAgo"]);
 });
 
+test("stamps from this page view (at or after now) don't count as recently shown", () => {
+  // A live re-pick after a sync must keep the cards the grid just stamped.
+  const later = new Date(NOW.getTime() + 60_000).toISOString();
+  const videos: VideoMap = { onScreen: video({ lastShownAt: later }), shownYesterday: video({ lastShownAt: daysAgo(1) }) };
+  assert.deepEqual(pick(videos, 1), ["onScreen"]);
+});
+
 test("a small backlog fills the grid from recently shown videos instead of going empty", () => {
   const videos: VideoMap = {
     shownOld: video({ lastShownAt: daysAgo(1), dateAdded: daysAgo(300) }),
@@ -120,4 +127,12 @@ test("formatDuration matches YouTube's timestamps", () => {
   assert.equal(formatDuration(725), "12:05");
   assert.equal(formatDuration(3723), "1:02:03");
   assert.equal(formatDuration(36000), "10:00:00");
+});
+
+test("timeAgo rounds to minutes, hours, then days", () => {
+  const now = NOW.getTime();
+  assert.equal(timeAgo(NOW.toISOString(), now), "just now");
+  assert.equal(timeAgo(new Date(now - 5 * 60_000).toISOString(), now), "5 min ago");
+  assert.equal(timeAgo(new Date(now - 2 * 3600_000).toISOString(), now), "2h ago");
+  assert.equal(timeAgo(daysAgo(3), now), "3d ago");
 });

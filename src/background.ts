@@ -13,7 +13,7 @@ const store = createStore(chrome.storage.local);
 
 type Handlers = { [T in Message["type"]]: (msg: Extract<Message, { type: T }>) => Promise<Backlog> };
 const handlers: Handlers = {
-  SYNC: syncBacklog,
+  SYNC: () => syncBacklog({ interactive: true }), // the user clicked: showing sign-in is fine
   GET_BACKLOG: store.read,
   MARK_SHOWN: async ({ ids }) => {
     await store.markShown(ids, new Date().toISOString());
@@ -32,23 +32,56 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-// One sync at a time: a second request (popup click, later the alarm) joins the
-// one already running instead of starting a parallel fetch.
+// Background sync every ~6h. Chrome can drop alarms on a browser restart or an
+// extension update, so re-create it whenever the worker starts and it's missing.
+const SYNC_ALARM = "sync";
+chrome.alarms.get(SYNC_ALARM).then((alarm) => {
+  if (!alarm) chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 6 * 60 });
+});
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== SYNC_ALARM) return;
+  syncBacklog({ interactive: false }).catch((err: Error) => {
+    // No token is flagged in storage for the popup/grid; just wait for the next alarm.
+    if (err instanceof SignInNeeded) console.log("[Backlog Zero] background sync skipped: sign-in needed");
+    else console.warn("[Backlog Zero] background sync failed:", err.message);
+  });
+});
+
+// One sync at a time: a second request (popup, grid, alarm) joins the one
+// already running instead of starting a parallel fetch.
 let inFlight: Promise<Backlog> | null = null;
-function syncBacklog(): Promise<Backlog> {
-  inFlight ??= withToken(fetchAndStore).finally(() => (inFlight = null));
+function syncBacklog({ interactive }: { interactive: boolean }): Promise<Backlog> {
+  inFlight ??= withToken(fetchAndStore, interactive).finally(() => (inFlight = null));
   return inFlight;
 }
 
 // Run fn(token); on a 401 drop the stale cached token and retry once.
-async function withToken<T>(fn: (token: string) => Promise<T>): Promise<T> {
-  const token = await getToken({ interactive: true });
+async function withToken<T>(fn: (token: string) => Promise<T>, interactive: boolean): Promise<T> {
+  const token = await signIn(interactive);
   try {
     return await fn(token);
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 401) throw err;
     await removeCachedToken(token);
-    return fn(await getToken({ interactive: true }));
+    return fn(await signIn(interactive));
+  }
+}
+
+class SignInNeeded extends Error {
+  constructor() {
+    super("Sign-in needed");
+  }
+}
+
+// Non-interactive (the alarm) never opens Google's consent screen: with no
+// cached token it flags the backlog as needing sign-in and gives up.
+async function signIn(interactive: boolean): Promise<string> {
+  try {
+    return await getToken({ interactive });
+  } catch (err) {
+    if (interactive) throw err;
+    await store.flagSignInNeeded();
+    throw new SignInNeeded();
   }
 }
 
