@@ -7,10 +7,11 @@
 //   - re-inject on yt-navigate-finish (YouTube's soft navigations), no polling
 //   - Shadow DOM so YouTube's CSS can't reach the grid
 import { render } from "preact";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
 import { pickCards, fillSlots, formatDuration, timeAgo, PICKER, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
+import type { Playlist } from "./lib/youtube.ts";
 
 // YouTube keeps every page it has visited in the DOM and just hides the inactive
 // ones, so scope to the home browse page.
@@ -109,12 +110,11 @@ function Body({ state }: { state: State }) {
   if (state.kind === "loading") return null;
   if (state.kind === "error") return <Notice title="Backlog Zero couldn't load your backlog" text={state.error} />;
 
-  const { videos = {}, lastSyncedAt } = state.backlog;
   return (
     <>
       <Toolbar backlog={state.backlog} />
-      {lastSyncedAt ? (
-        <Grid videos={videos} />
+      {state.backlog.lastSyncedAt ? (
+        <Home backlog={state.backlog} />
       ) : (
         <Notice title="Nothing synced yet" text="Hit Refresh to pull in your playlists." />
       )}
@@ -135,16 +135,68 @@ function usePageView() {
   return view;
 }
 
-function Grid({ videos }: { videos: VideoMap }) {
+type PageView = ReturnType<typeof usePageView>;
+
+// The tabs and the grid. Switching tabs re-picks from the cached backlog.
+function Home({ backlog: { videos = {}, playlists = [] } }: { backlog: Backlog }) {
   const view = usePageView();
-  // Videos dealt with on this page (any action, re-roll included). They leave at
-  // once, without waiting for the write, and a sync landing mid-write can't bring
-  // them back.
+  const [tab, setTab] = useState<string | null>(null); // a playlist id; null = All
+  // Videos dealt with on this page (any action, re-roll included), across every
+  // tab. They leave at once, without waiting for the write, and a sync landing
+  // mid-write can't bring them back.
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  // A sync can drop the selected playlist; fall back to All.
+  const playlist = playlists.find((p) => p.id === tab);
+  return (
+    <>
+      <Tabs playlists={playlists} active={playlist?.id ?? null} onSelect={setTab} />
+      {/* Keyed so each tab starts from its own top picks, not the last tab's slots. */}
+      <Grid
+        key={playlist?.id ?? ""}
+        videos={videos}
+        view={view}
+        playlist={playlist}
+        gone={gone}
+        setGone={setGone}
+      />
+    </>
+  );
+}
+
+function Tabs({ playlists, active, onSelect }: {
+  playlists: Playlist[];
+  active: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  const tabs = [{ id: null, title: "All" }, ...playlists];
+  return (
+    <div class="tabs" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.id ?? ""}
+          role="tab"
+          aria-selected={t.id === active}
+          class={t.id === active ? "tab active" : "tab"}
+          onClick={() => onSelect(t.id)}
+        >
+          {t.title}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Grid({ videos, view, playlist, gone, setGone }: {
+  videos: VideoMap;
+  view: PageView;
+  playlist: Playlist | undefined;
+  gone: ReadonlySet<string>;
+  setGone: Dispatch<StateUpdater<ReadonlySet<string>>>;
+}) {
   const [error, setError] = useState<string | null>(null);
   const ranked = useMemo(
-    () => pickCards(videos, { ...view, n: Infinity }).filter((c) => !gone.has(c.id)),
-    [videos, view, gone]
+    () => pickCards(videos, { ...view, playlist: playlist?.id, n: Infinity }).filter((c) => !gone.has(c.id)),
+    [videos, view, playlist?.id, gone]
   );
   // The previous cards' order, so a backfill lands in the slot that emptied.
   const slots = useRef<string[]>([]);
@@ -181,6 +233,8 @@ function Grid({ videos }: { videos: VideoMap }) {
             <VideoCard key={c.id} card={c} onAction={(patch) => act(c, patch)} />
           ))}
         </div>
+      ) : playlist ? (
+        <Notice title="Nothing left here" text={`Everything in ${playlist.title} is watched, kept or snoozed.`} />
       ) : (
         <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />
       )}
@@ -303,6 +357,16 @@ const CSS = `
   }
   button:hover { background: var(--yt-spec-button-chip-background-hover, rgba(0, 0, 0, 0.1)); }
   button:disabled { opacity: 0.5; cursor: default; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .tab {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+  }
+  .tab.active, .tab.active:hover {
+    background: var(--yt-spec-text-primary, #0f0f0f);
+    color: var(--yt-spec-base-background, #fff);
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
