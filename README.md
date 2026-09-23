@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/94543a8d-f301-4fa4-9a88-c2f3f88b845b
-
 # Backlog Zero
 
 **Replace YouTube's home feed with your own playlist backlog — so you actually watch it.**
@@ -11,7 +7,7 @@ grow. Open youtube.com and, instead of recommendations, you get a grid of videos
 chose to watch, weighted toward the ones that have waited longest and take the least time.
 Mark them watched, snooze or keep them, and watch the pile shrink to zero.
 
-<!-- Demo video: drag the .mp4 into this README on github.com and GitHub inserts the link here. -->
+https://github.com/user-attachments/assets/94543a8d-f301-4fa4-9a88-c2f3f88b845b
 
 ---
 
