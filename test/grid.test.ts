@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCards, formatDuration, timeAgo, PICKER } from "../src/lib/grid.ts";
+import { pickCards, fillSlots, formatDuration, timeAgo, PICKER, type Card } from "../src/lib/grid.ts";
 import type { Video, VideoMap } from "../src/lib/sync.ts";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
@@ -119,6 +119,30 @@ test("cards carry the video's id and fields", () => {
 
 test("an empty backlog picks nothing", () => {
   assert.deepEqual(pick({}), []);
+});
+
+const cards = (...ids: string[]): Card[] => ids.map((id) => ({ ...video(), id }));
+const ids = (list: Card[]) => list.map((c) => c.id);
+
+test("fillSlots with no previous cards shows the top n", () => {
+  assert.deepEqual(ids(fillSlots([], cards("a", "b", "c", "d"), 3)), ["a", "b", "c"]);
+});
+
+test("a card that leaves is replaced in its own slot by the best card not on screen", () => {
+  // b was acted on; d is the best of the rest, so it takes b's slot.
+  assert.deepEqual(ids(fillSlots(["a", "b", "c"], cards("a", "c", "d", "e"), 3)), ["a", "d", "c"]);
+});
+
+test("cards still on screen keep their slots even if they'd rank differently now", () => {
+  assert.deepEqual(ids(fillSlots(["a", "b", "c"], cards("c", "b", "a"), 3)), ["a", "b", "c"]);
+});
+
+test("with nothing left to backfill the grid shrinks instead of leaving a hole", () => {
+  assert.deepEqual(ids(fillSlots(["a", "b", "c"], cards("a", "c"), 3)), ["a", "c"]);
+});
+
+test("new room (e.g. a sync added videos) fills from the end", () => {
+  assert.deepEqual(ids(fillSlots(["a"], cards("x", "a", "y"), 3)), ["a", "x", "y"]);
 });
 
 test("formatDuration matches YouTube's timestamps", () => {
