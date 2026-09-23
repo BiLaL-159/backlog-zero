@@ -1,19 +1,20 @@
 {
-  // Type-checks everything (src + tests). Emitting is tsconfig.build.json's job.
+  // Type-checks everything (src + tests + build config). Vite does the bundling.
   "compilerOptions": {
     "target": "es2022",
     "module": "nodenext",
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": ["chrome", "node"],
     "strict": true,
-    // Sources import "./x.ts" so Node can run them directly (tests) and tsc
-    // rewrites them to "./x.js" in the build.
+    // Sources import "./x.ts" so Node can run them directly (tests); Vite
+    // resolves the same paths when bundling.
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "vite.config.ts"]
 }
