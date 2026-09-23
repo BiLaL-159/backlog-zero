@@ -6,6 +6,7 @@ import { isInBacklog, type Video, type VideoMap } from "./sync.ts";
 export const PICKER = {
   // score = old × howOld + short × howShort + random × variety, each part in 0..1
   weights: { old: 0.4, short: 0.4, random: 0.2 },
+  // Cards per page of the grid; scrolling near the bottom loads another page.
   gridSize: 12,
   // A video shown this recently sits out, while enough others remain to fill the grid.
   recentlyShownMs: 3 * 24 * 60 * 60 * 1000,
@@ -23,11 +24,11 @@ export interface Card extends Video {
 export interface PickOptions {
   now: Date;
   n?: number;
-  // 0..1 variety for one video; injectable so tests are deterministic.
+  // 0..1 variety for one video (and the playlist order in the All view);
+  // injectable so tests are deterministic.
   random?: (id: string) => number;
   // A playlist tab: pick from just this playlist's videos, ranked among
-  // themselves. Omitted for the All view, the only view a future "don't clump
-  // same-topic" penalty would apply to.
+  // themselves. Omitted for the All view.
   playlist?: string;
 }
 
@@ -35,6 +36,10 @@ export interface PickOptions {
 // kept, archived, removed from YouTube or still snoozed; the rest are scored and
 // the top n shown. Recently shown videos only fill in when the others run out,
 // so a small backlog never leaves the grid empty.
+//
+// A playlist tab ranks that playlist's videos. The All view ranks each playlist
+// on its own and deals from them in turn, so one playlist full of old saves
+// can't crowd out the rest (a new playlist gets a card in the first round).
 export function pickCards(
   videos: VideoMap,
   { now, n = PICKER.gridSize, random = () => Math.random(), playlist }: PickOptions
@@ -44,18 +49,49 @@ export function pickCards(
     .filter(([, v]) => playlist == null || v.playlistIds.includes(playlist))
     .map(([id, v]): Card => ({ ...v, id }));
 
-  // Scored across every eligible video, so fresh and fallback cards share a scale.
-  const howOld = ranks(eligible.map((c) => -Date.parse(c.dateAdded)));
-  const howShort = ranks(eligible.map((c) => -c.durationSec));
-  const { weights: w } = PICKER;
-  const scored = eligible.map((card, i) => ({
-    card,
-    score: w.old * howOld[i] + w.short * howShort[i] + w.random * random(card.id),
-    recent: wasShownRecently(card, now),
-  }));
+  if (playlist != null) {
+    const { fresh, recent } = rank(eligible, now, random);
+    return [...fresh, ...recent].slice(0, n);
+  }
 
-  const best = (list: typeof scored) => list.sort((a, b) => b.score - a.score).map((s) => s.card);
-  return [...best(scored.filter((s) => !s.recent)), ...best(scored.filter((s) => s.recent))].slice(0, n);
+  // A video saved in several playlists deals from the first one.
+  const groups = new Map<string, Card[]>();
+  for (const card of eligible) {
+    const key = card.playlistIds[0] ?? "";
+    groups.set(key, [...(groups.get(key) ?? []), card]);
+  }
+  const ranked = [...groups]
+    .sort(([a], [b]) => random(a) - random(b))
+    .map(([, cards]) => rank(cards, now, random));
+  return [...interleave(ranked.map((r) => r.fresh)), ...interleave(ranked.map((r) => r.recent))].slice(0, n);
+}
+
+// One pool's videos, best first, split into not-recently-shown and recently
+// shown. Scored across the whole pool, so both parts share a scale.
+function rank(cards: Card[], now: Date, random: (id: string) => number): { fresh: Card[]; recent: Card[] } {
+  const howOld = ranks(cards.map((c) => -Date.parse(c.dateAdded)));
+  const howShort = ranks(cards.map((c) => -c.durationSec));
+  const { weights: w } = PICKER;
+  const scored = cards
+    .map((card, i) => ({
+      card,
+      score: w.old * howOld[i] + w.short * howShort[i] + w.random * random(card.id),
+      recent: wasShownRecently(card, now),
+    }))
+    .sort((a, b) => b.score - a.score);
+  return {
+    fresh: scored.filter((s) => !s.recent).map((s) => s.card),
+    recent: scored.filter((s) => s.recent).map((s) => s.card),
+  };
+}
+
+// Round-robin: the first of each list, then the second of each, and so on.
+function interleave<T>(lists: T[][]): T[] {
+  const out: T[] = [];
+  for (let i = 0; out.length < lists.reduce((sum, l) => sum + l.length, 0); i++) {
+    for (const list of lists) if (i < list.length) out.push(list[i]);
+  }
+  return out;
 }
 
 // The cards to show after the pool changed (an action, a re-roll, a sync). Cards

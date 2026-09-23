@@ -255,3 +255,39 @@ test("timeAgo rounds to minutes, hours, then days", () => {
   assert.equal(timeAgo(new Date(now - 2 * 3600_000).toISOString(), now), "2h ago");
   assert.equal(timeAgo(daysAgo(3), now), "3d ago");
 });
+
+test("the All view deals from each playlist in turn, so one playlist can't crowd out the rest", () => {
+  const videos: VideoMap = {
+    old1: video({ playlistIds: ["PLweb3"], dateAdded: "2021-01-01T00:00:00Z" }),
+    old2: video({ playlistIds: ["PLweb3"], dateAdded: "2021-02-01T00:00:00Z" }),
+    old3: video({ playlistIds: ["PLweb3"], dateAdded: "2021-03-01T00:00:00Z" }),
+    fresh: video({ playlistIds: ["PLnew"], dateAdded: daysAgo(1) }),
+  };
+  assert.deepEqual(pick(videos, 2).sort(), ["fresh", "old1"]);
+  assert.deepEqual(pick(videos).sort(), ["fresh", "old1", "old2", "old3"]);
+});
+
+test("each playlist keeps its own order within the All view", () => {
+  const videos: VideoMap = {
+    a2: video({ playlistIds: ["PLa"], dateAdded: daysAgo(10) }),
+    a1: video({ playlistIds: ["PLa"], dateAdded: daysAgo(100) }),
+    b1: video({ playlistIds: ["PLb"], dateAdded: daysAgo(50) }),
+  };
+  const ids = pick(videos);
+  assert.ok(ids.indexOf("a1") < ids.indexOf("a2"));
+  assert.ok(ids.indexOf("b1") < ids.indexOf("a2"));
+});
+
+test("in the All view, recently shown videos still come after every fresh one", () => {
+  const videos: VideoMap = {
+    seen: video({ playlistIds: ["PLa"], lastShownAt: daysAgo(1), dateAdded: "2020-01-01T00:00:00Z" }),
+    b1: video({ playlistIds: ["PLb"] }),
+    b2: video({ playlistIds: ["PLb"] }),
+  };
+  assert.equal(pick(videos).at(-1), "seen");
+});
+
+test("a video in several playlists appears once in the All view", () => {
+  const videos: VideoMap = { both: video({ playlistIds: ["PLa", "PLb"] }), b: video({ playlistIds: ["PLb"] }) };
+  assert.deepEqual(pick(videos).sort(), ["b", "both"]);
+});

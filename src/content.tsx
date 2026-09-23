@@ -6,9 +6,9 @@
 //   - anchor to stable component tags, never hashed CSS classes
 //   - re-inject on yt-navigate-finish (YouTube's soft navigations), no polling
 //   - Shadow DOM so YouTube's CSS can't reach the grid
-import { render } from "preact";
+import { render, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type StateUpdater } from "preact/hooks";
-import { pickCards, fillSlots, pickShelf, formatDuration, timeAgo, PICKER, type Card } from "./lib/grid.ts";
+import { pickCards, fillSlots, pickShelf, formatDuration, PICKER, type Card } from "./lib/grid.ts";
 import type { Backlog, Message, Response, VideoPatch } from "./lib/messages.ts";
 import type { VideoMap } from "./lib/sync.ts";
 import type { Playlist } from "./lib/youtube.ts";
@@ -38,9 +38,13 @@ function mount() {
     return;
   }
   // Hide the feed rather than remove it, so YouTube's own code keeps working and
-  // it comes back untouched if we unmount.
+  // it comes back untouched if we unmount. The frosted header behind the masthead
+  // stretches to cover the feed's chip bar; shrink it back so it doesn't cover us.
   hideFeed = document.createElement("style");
-  hideFeed.textContent = `${FEED} { display: none !important; }`;
+  hideFeed.textContent = `
+    ${FEED} { display: none !important; }
+    #frosted-glass.with-chipbar { height: 56px !important; }
+  `;
   document.head.append(hideFeed);
 
   host = document.createElement("div");
@@ -114,11 +118,10 @@ function Body({ state }: { state: State }) {
 
   return (
     <>
-      <Toolbar backlog={state.backlog} />
       {state.backlog.lastSyncedAt ? (
         <Home backlog={state.backlog} />
       ) : (
-        <Notice title="Nothing synced yet" text="Hit Refresh to pull in your playlists." />
+        <Notice title="Nothing synced yet" text="Click the Backlog Zero icon in the toolbar, then Sync from YouTube." />
       )}
     </>
   );
@@ -141,8 +144,8 @@ function usePageView() {
 
 type PageView = ReturnType<typeof usePageView>;
 
-// The tabs, the grid and, on some visits, the Kept shelf below them. Switching
-// tabs re-picks from the cached backlog.
+// The tabs, the grid and, on some visits, the Kept shelf after the grid's first
+// page. Switching tabs re-picks from the cached backlog.
 function Home({ backlog: { videos = {}, playlists = [] } }: { backlog: Backlog }) {
   const view = usePageView();
   const [tab, setTab] = useState<string | null>(null); // a playlist id; null = All
@@ -163,8 +166,8 @@ function Home({ backlog: { videos = {}, playlists = [] } }: { backlog: Backlog }
         playlist={playlist}
         gone={gone}
         setGone={setGone}
+        shelf={<Shelf videos={videos} view={view} />}
       />
-      <Shelf videos={videos} view={view} />
     </>
   );
 }
@@ -218,12 +221,14 @@ function Tabs({ playlists, active, onSelect }: {
   );
 }
 
-function Grid({ videos, view, playlist, gone, setGone }: {
+// Endless: a page of cards to start, another each time the end scrolls near.
+function Grid({ videos, view, playlist, gone, setGone, shelf }: {
   videos: VideoMap;
   view: PageView;
   playlist: Playlist | undefined;
   gone: ReadonlySet<string>;
   setGone: Dispatch<StateUpdater<ReadonlySet<string>>>;
+  shelf: ComponentChildren;
 }) {
   const [error, setError] = useState<string | null>(null);
   const ranked = useMemo(
@@ -232,11 +237,25 @@ function Grid({ videos, view, playlist, gone, setGone }: {
   );
   // The previous cards' order, so a backfill lands in the slot that emptied.
   const slots = useRef<string[]>([]);
+  const [limit, setLimit] = useState(PICKER.gridSize);
   const cards = useMemo(() => {
-    const next = fillSlots(slots.current, ranked);
+    const next = fillSlots(slots.current, ranked, limit);
     slots.current = next.map((c) => c.id);
     return next;
-  }, [ranked]);
+  }, [ranked, limit]);
+  // Re-observed after every page, so a screen tall enough to still show the end
+  // keeps loading until it's filled.
+  const end = useRef<HTMLDivElement>(null);
+  const hasMore = ranked.length > limit;
+  useEffect(() => {
+    if (!hasMore || !end.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => entry.isIntersecting && setLimit((l) => l + PICKER.gridSize),
+      { rootMargin: "600px" }
+    );
+    observer.observe(end.current);
+    return () => observer.disconnect();
+  }, [hasMore, limit]);
   // Only the cards actually rendered count as shown.
   useEffect(() => {
     if (cards.length) send({ type: "MARK_SHOWN", ids: cards.map((c) => c.id) }).catch(() => {}); // best effort
@@ -256,59 +275,35 @@ function Grid({ videos, view, playlist, gone, setGone }: {
     }
   }
 
+  const renderCards = (list: Card[]) => (
+    <div class="grid">
+      {list.map((c) => (
+        <VideoCard key={c.id} card={c} onAction={(patch) => act(c, patch)} />
+      ))}
+    </div>
+  );
+
   return (
     <>
       {error && <p class="grid-error">{error}</p>}
       {cards.length ? (
-        <div class="grid">
-          {cards.map((c) => (
-            <VideoCard key={c.id} card={c} onAction={(patch) => act(c, patch)} />
-          ))}
-        </div>
-      ) : playlist ? (
-        <Notice title="Nothing left here" text={`Everything in ${playlist.title} is watched, kept or snoozed.`} />
+        <>
+          {renderCards(cards.slice(0, PICKER.gridSize))}
+          {shelf}
+          {cards.length > PICKER.gridSize && renderCards(cards.slice(PICKER.gridSize))}
+          <div ref={end} />
+        </>
       ) : (
-        <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />
+        <>
+          {playlist ? (
+            <Notice title="Nothing left here" text={`Everything in ${playlist.title} is watched, kept or snoozed.`} />
+          ) : (
+            <Notice title="Backlog zero 🎉" text="Nothing left to watch in your playlists." />
+          )}
+          {shelf}
+        </>
       )}
     </>
-  );
-}
-
-type SyncState = { kind: "idle" } | { kind: "syncing" } | { kind: "error"; error: string };
-
-// "Synced 2h ago" + Refresh. A successful sync needs no handling here: the new
-// backlog arrives through App's storage listener, like any other sync.
-function Toolbar({ backlog: { lastSyncedAt, signInNeeded } }: { backlog: Backlog }) {
-  const [sync, setSync] = useState<SyncState>({ kind: "idle" });
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => tick((n) => n + 1), 60_000); // keep "X ago" current
-    return () => clearInterval(timer);
-  }, []);
-
-  async function refresh() {
-    setSync({ kind: "syncing" });
-    try {
-      const res = await send({ type: "SYNC" });
-      setSync(res?.ok ? { kind: "idle" } : { kind: "error", error: res?.error ?? "No response" });
-    } catch (err) {
-      setSync({ kind: "error", error: (err as Error).message });
-    }
-  }
-
-  const [text, isError] =
-    sync.kind === "syncing" ? ["Syncing…", false]
-    : sync.kind === "error" ? [`Sync failed: ${sync.error}`, true]
-    : signInNeeded ? ["Sign-in needed — hit Refresh to sign in", true]
-    : lastSyncedAt ? [`Synced ${timeAgo(lastSyncedAt)}`, false]
-    : ["Not synced yet", false];
-  return (
-    <div class="toolbar">
-      <span class={isError ? "status error" : "status"}>{text}</span>
-      <button onClick={refresh} disabled={sync.kind === "syncing"}>
-        Refresh
-      </button>
-    </div>
   );
 }
 
@@ -399,19 +394,8 @@ const CSS = `
     --error: #ff6b6b;
   }
   /* Padding lives here, not on :host, because YouTube's global reset
-     (div { padding: 0 }) beats :host rules. The top clears YouTube's frosted
-     header, which still reserves room for the chip bar we hide. */
-  .root { padding: 64px 24px 48px; }
-  .toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
-  .status { color: var(--text-2); }
-  .status.error { color: var(--error); }
+     (div { padding: 0 }) beats :host rules. */
+  .root { padding: 16px 24px 48px; }
   button {
     font: inherit;
     font-weight: 500;
@@ -435,6 +419,7 @@ const CSS = `
     background: var(--text);
     color: var(--bg);
   }
+  .grid + .grid { margin-top: 40px; }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -498,8 +483,9 @@ const CSS = `
   .actions button:hover { background: rgba(0, 0, 0, 0.9); }
   .actions svg { width: 18px; height: 18px; fill: currentColor; }
   .shelf {
-    margin-top: 48px;
-    padding-top: 24px;
+    margin: 48px 0;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--line);
     border-top: 1px solid var(--line);
   }
   .shelf h2 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
